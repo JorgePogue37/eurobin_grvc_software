@@ -1,0 +1,202 @@
+/*
+ * Copyright (c) 2020 LiCAS Robotic Arms
+ *
+ * Developer: Alejandro Suarez Fernandez-Miranda
+ *
+ * This source code is part of LiCAS Robotic Arms.
+ *
+ * The distribution of this source code is not allowed without the consent of the author
+ *
+ * File name: TaskManager.cpp
+ */
+
+#include "TaskManager.h"
+
+#include "../Constants/Constants.h"
+
+
+/*
+ * Take control references from external source
+ */
+void TaskManager::externalJointReferenceControl()
+{
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	extern struct timeval t0;
+	struct timeval t1;
+	struct timeval tini;
+	struct timeval tend;
+	double t = 0;
+	double timeStamp = 0;
+	float playTime = 1;
+	useconds_t sleepTime = 1000000;
+		
+	double q1L = 0;
+	double q2L = 0;
+	double q3L = 0;
+	double q4L = 0;
+	double q1R = 0;
+	double q2R = 0;
+	double q3R = 0;
+	double q4R = 0;
+	double xL = 0;
+	double yL = 0;
+	double zL = 0;
+	double xR = 0;
+	double yR = 0;
+	double zR = 0;
+	
+	double qL_ref[NUM_ARM_JOINTS] = {0, 0, 0, 0};
+	double qR_ref[NUM_ARM_JOINTS] = {0, 0, 0, 0};
+	uint8_t k = 0;
+	int leftArmServosID[NUM_ARM_JOINTS] = {LEFT_ARM_SHOULDER_PITCH_SERVO_ID, LEFT_ARM_SHOULDER_ROLL_SERVO_ID, LEFT_ARM_SHOULDER_YAW_SERVO_ID, LEFT_ARM_ELBOW_PITCH_SERVO_ID};
+	int rightArmServosID[NUM_ARM_JOINTS] = {RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, RIGHT_ARM_SHOULDER_YAW_SERVO_ID, RIGHT_ARM_ELBOW_PITCH_SERVO_ID};
+
+
+	cout << "External joint control reference" << endl;
+	while(threadArgs->endFlag == false && threadArgs->gcsCode == EXTERNAL_JOINT_CONTROL_REF)
+	{
+		// Get time stamp at the begining of the control loop
+		gettimeofday(&tini, NULL);
+		
+		if(threadArgs->controlReferencesDataReceivedFlag != 0)
+		{
+			// Obtain the Cartesian position of the left and right arms
+			q1L = 0.017453*leftArmController->shoulderPitchServoState->position;
+			q2L = 0.017453*leftArmController->shoulderRollServoState->position;
+			q3L = 0.017453*leftArmController->shoulderYawServoState->position;
+			q4L = 0.017453*leftArmController->elbowPitchServoState->position;
+			threadArgs->leftArmKinematics->directKinematics(q1L, q2L, q3L, q4L, &xL, &yL, &zL);
+			// printf("Left arm Cartesian position = {%.2lf, %.2lf, %.2lf} [cm]\n", 100*xL, 100*yL, 100*zL);
+			// printf("Left arm Marker position = {%.2lf, %.2lf, %.2lf} [cm]\n", 100*threadArgs->leftArmMarkerPosition[0], 100*threadArgs->leftArmMarkerPosition[1], 100*threadArgs->leftArmMarkerPosition[2]);
+			q1R = 0.017453*rightArmController->shoulderPitchServoState->position;
+			q2R = 0.017453*rightArmController->shoulderRollServoState->position;
+			q3R = 0.017453*rightArmController->shoulderYawServoState->position;
+			q4R = 0.017453*rightArmController->elbowPitchServoState->position;
+			threadArgs->rightArmKinematics->directKinematics(q1R, q2R, q3R, q4R, &xR, &yR, &zR);
+			// printf("Right arm Cartesian position = {%.1lf, %.1lf, %.1lf} [cm]\n", 100*xR, 100*yR, 100*zR);
+			// printf("Rigt arm Marker position = {%.2lf, %.2lf, %.2lf} [cm]\n", 100*threadArgs->rightArmMarkerPosition[0], 100*threadArgs->rightArmMarkerPosition[1], 100*threadArgs->rightArmMarkerPosition[2]);	
+			// cout << "---------------" << endl;
+			
+			printf("Left arm joint references: {%.1f, %.1f, %.1f, %.1f} [deg]\n", 57.296*threadArgs->armsControlRefs.leftArmJointPositionRef[0], 57.296*threadArgs->armsControlRefs.leftArmJointPositionRef[1], 57.296*threadArgs->armsControlRefs.leftArmJointPositionRef[2], 57.296*threadArgs->armsControlRefs.leftArmJointPositionRef[3]);
+			playTime = 2*EXTERNAL_CONTROL_REF_PERIOD;
+	
+			for(uint8_t k = 0; k < NUM_ARM_JOINTS; k++)
+			{
+				leftArmController->moveJoint(leftArmServosID[k], 57.296*threadArgs->armsControlRefs.leftArmJointPositionRef[k], playTime, threadArgs->usbDeviceLeftArm);
+				usleep(1000);
+				
+				rightArmController->moveJoint(rightArmServosID[k], 57.296*threadArgs->armsControlRefs.rightArmJointPositionRef[k], playTime, threadArgs->usbDeviceRightArm);
+				usleep(1000);				
+			}
+		}
+			
+		threadArgs->controlReferencesDataReceivedFlag = 0;
+		
+		// Get time stamp at the end of the control loop
+		gettimeofday(&tend, NULL);
+		t = (tend.tv_sec - tini.tv_sec) + 1e-6*(tend.tv_usec - tini.tv_usec);
+		
+		// Get current time stamp
+		gettimeofday(&t1, NULL);
+		timeStamp = (t1.tv_sec - t0.tv_sec) + 1e-6*(t1.tv_usec - t0.tv_usec);
+		// printf("t = %.3lf\n", timeStamp);
+		
+		// Wait time
+		if(t > EXTERNAL_CONTROL_REF_PERIOD)
+			cout << "WARNING: [in externalJointControlRef(...)]: control period exceeded." << endl;
+		else
+			usleep((useconds_t)(1e6*(EXTERNAL_CONTROL_REF_PERIOD - t)));
+	}
+
+}
+
+
+	
+/*
+ * Reproduces the trajecory indicated by the operator.
+ */
+void TaskManager::reproduceLearnedTrajectory()
+{
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	float qLref[100][4];
+	float qRref[100][4];
+	struct timeval tini;
+	struct timeval tend;
+	double delta_t = 0;
+	double playTime = 0.04;
+	int k = 0;
+	int numSamples = 0;
+	
+	
+	cout << "MOVING ARMS TO INITIAL POSITION" << endl;
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, 0, 1, threadArgs->usbDeviceLeftArm);
+	usleep(1000);
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 0, 1, threadArgs->usbDeviceLeftArm);
+	usleep(1000);
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_YAW_SERVO_ID, 0, 1, threadArgs->usbDeviceLeftArm);
+	usleep(1000);
+	leftArmController->moveJoint(LEFT_ARM_ELBOW_PITCH_SERVO_ID, -90, 1, threadArgs->usbDeviceLeftArm);
+	usleep(1000);	
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, 0, 1, threadArgs->usbDeviceRightArm);
+	usleep(1000);
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, 0, 1, threadArgs->usbDeviceRightArm);
+	usleep(1000);
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, 0, 1, threadArgs->usbDeviceRightArm);
+	usleep(1000);
+	rightArmController->moveJoint(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, -90, 1, threadArgs->usbDeviceRightArm);
+	usleep(1000);
+	usleep(2000000);
+	
+	
+	this->enableServosTorqueControl(0);
+	usleep(10000);
+	
+	cout << "LEARN TRAJECTORY" << endl;
+	for(k = 0; k < 100 && threadArgs->endFlag == false; k++)
+	{
+		qLref[k][0] = leftArmController->shoulderPitchServoState->position;
+		qLref[k][1] = leftArmController->shoulderRollServoState->position;
+		qLref[k][2] = leftArmController->shoulderYawServoState->position;
+		qLref[k][3] = leftArmController->elbowPitchServoState->position;
+		
+		qRref[k][0] = rightArmController->shoulderPitchServoState->position;
+		qRref[k][1] = rightArmController->shoulderRollServoState->position;
+		qRref[k][2] = rightArmController->shoulderYawServoState->position;
+		qRref[k][3] = rightArmController->elbowPitchServoState->position;
+
+		usleep(20000);
+	}
+	
+	numSamples = k - 1;
+	
+	this->enableServosTorqueControl(1);
+	usleep(10000);
+	
+	cout << "REPRODUCE TRAJECTORY" << endl;
+	usleep(2000000);
+	for(k = 0; k < numSamples && threadArgs->endFlag == false; k++)
+	{
+		leftArmController->moveJoint(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, qLref[k][0], playTime, threadArgs->usbDeviceLeftArm);
+		usleep(1000);
+		leftArmController->moveJoint(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, qLref[k][1], playTime, threadArgs->usbDeviceLeftArm);
+		usleep(1000);
+		leftArmController->moveJoint(LEFT_ARM_SHOULDER_YAW_SERVO_ID, qLref[k][2], playTime, threadArgs->usbDeviceLeftArm);
+		usleep(1000);
+		leftArmController->moveJoint(LEFT_ARM_ELBOW_PITCH_SERVO_ID, qLref[k][3], playTime, threadArgs->usbDeviceLeftArm);
+		usleep(1000);	
+		rightArmController->moveJoint(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, qRref[k][0], playTime, threadArgs->usbDeviceRightArm);
+		usleep(1000);
+		rightArmController->moveJoint(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, qRref[k][1], playTime, threadArgs->usbDeviceRightArm);
+		usleep(1000);
+		rightArmController->moveJoint(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, qRref[k][2], playTime, threadArgs->usbDeviceRightArm);
+		usleep(1000);
+		rightArmController->moveJoint(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, qRref[k][3], playTime, threadArgs->usbDeviceRightArm);
+		usleep(1000);
+		usleep(12000);
+	}
+	
+}
+
+

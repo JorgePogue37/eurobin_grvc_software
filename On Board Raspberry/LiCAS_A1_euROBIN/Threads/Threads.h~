@@ -1,0 +1,618 @@
+
+
+
+// Standard library
+#include <iostream>
+#include <fstream>
+#include <math.h>
+#include <termios.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <sys/types.h> 
+#include <sys/socket.h>
+#include <netinet/in.h>
+
+
+// Specific library
+#include "../ArmController/ArmController.h"
+
+
+// Constant definition
+
+
+
+// Thread function declaration
+static void * leftArmServosDataThreadFunction(void * args);
+static void * rightArmServosDataThreadFunction(void * args);
+static void * stm32BoardDataThreadFunction(void * args);
+static void * controlThreadFunction(void * args);
+static void * visionThreadFunction(void * args);
+static void * gcsThreadFunction(void * args);
+
+
+// Namespaces
+using namespace std;
+
+
+
+/*
+ * Thread function for receiving the measurements sent by the left arm servos.
+ */
+static void * leftArmServosDataThreadFunction(void * args)
+{
+	THREAD_ARGS * threadArgs = (THREAD_ARGS*)args;
+	ArmController * leftArmController = threadArgs->leftArmController;
+	struct timeval tini;
+	struct timeval tend;
+	double t = 0;
+	double elapsedTime = 0;
+	ssize_t bytesRead = 0;
+	unsigned int k = 0;
+	unsigned int headerIndex = 0;
+	ssize_t bytesReceived = 0;
+	uint8_t bufferRx[RX_BUFFER_LENGTH];
+	uint8_t buffer[RX_BUFFER_LENGTH];
+	uint8_t bufferAux[RX_BUFFER_LENGTH];
+	uint8_t tempBuffer[RX_BUFFER_LENGTH];
+	uint8_t rxState = 1;
+	uint8_t indexServo = 1;
+	bool headerFound = false;
+	bool packetReceived = false;
+	bool bufferOverflow = false;
+	
+	int error = 0;
+	
+	
+	cout << "Left arm servos data thread started" << endl;
+	
+	// Init data acquisition loop
+	while(error == 0 && threadArgs->endFlag == false)
+	{
+		// Get current time stamp
+		gettimeofday(&tini, NULL);
+		
+		// Send the RAM read request packet to the corresponding servo
+		if(indexServo == 1)
+			leftArmController->shoulderYawServoState->sendStatusUpdateRequest(threadArgs->usbDeviceLeftArm);
+		else if(indexServo == 2)
+			leftArmController->elbowPitchServoState->sendStatusUpdateRequest(threadArgs->usbDeviceLeftArm);
+		else if(indexServo == 3)
+			leftArmController->shoulderYawServoState->sendStatusUpdateRequest(threadArgs->usbDeviceLeftArm);
+		else
+			leftArmController->elbowPitchServoState->sendStatusUpdateRequest(threadArgs->usbDeviceLeftArm);
+			
+		/****************************** RECEPTION OF DATA FROM SERVOS INI ******************************/
+			
+		// Initialize variables of the state machine
+		bytesReceived = 0;
+		rxState = 1;
+		headerFound = false;
+		packetReceived = false;
+				
+		while(packetReceived == false && error == 0 && threadArgs->endFlag == false)
+		{
+			switch (rxState)
+			{
+				case 1:
+					// Wait the reception of a new data packet
+					bytesRead = read(threadArgs->usbDeviceLeftArm, (char*)bufferRx, RX_BUFFER_LENGTH - 1);
+					if(bytesRead > 0)
+					{
+						if(bytesReceived + bytesRead >= RX_BUFFER_LENGTH)
+						{
+							bufferOverflow = true;
+							bytesReceived = 0;
+							headerFound = false;
+							packetReceived = false;
+							cout << "WARNING: [in leftArmServosDataThreadFunction] buffer overflow." << endl;
+						}
+						else
+						{
+							// Copy the received data into the buffer
+							for(k = 0; k < bytesRead; k++)
+								buffer[k + bytesReceived] = bufferRx[k];
+							bytesReceived += bytesRead;
+						}
+					}
+		
+					// Decide which is the next state
+					if(bytesRead <= 0 || bytesReceived < 2 || bufferOverflow == true)
+					{
+						rxState = 1;			// Wait the reception of data
+						bufferOverflow = false;
+					}
+					else
+					{
+						if(headerFound == false)
+							rxState = 2;	// After receiving new data, check if header is found
+						else
+							rxState = 3;	// Header was already found. Now check if packet is completely received.
+					}
+								
+					break;
+						
+						
+				case 2:
+					// Look for packet header (0x255 0x255)
+					headerFound = false;
+					for(k = 0; k < bytesReceived - 2 && headerFound == false; k++)
+					{
+						if(buffer[k] == 255 && buffer[k+1] == 255)
+						{
+							headerFound = true;
+							headerIndex = k;
+						}
+					}
+							
+					// Decide which is the next state
+					if(headerFound == false)
+						rxState = 1;	// Wait the reception of new data in the next state
+					else
+						rxState = 3;	// Check if the packet has been completely received
+							
+					break;
+					
+					
+				case 3:		
+					// Check if the packet has been fully received
+					if(bytesReceived - headerIndex >= SERVO_DATA_PACKET_LENGTH)
+						packetReceived = true;
+					else
+						packetReceived = false;
+							
+					// Decide which is the next state
+					if(packetReceived == false)
+						rxState = 1;	// Wait the reception of new data in the next state
+						
+					break;
+			}
+		}
+			
+		/****************************** RECEPTION OF DATA FROM SERVOS END ******************************/
+			
+		// Extract the data packet
+		for(k = 0; k < SERVO_DATA_PACKET_LENGTH; k++)
+			tempBuffer[k] = buffer[k + headerIndex];
+			
+		// Update the state of the corresponding servo
+		leftArmController->updateServoState((char*)tempBuffer, SERVO_DATA_PACKET_LENGTH);	
+			
+		// Get time stamp at the end of the loop
+		gettimeofday(&tend, NULL);
+		t = (tend.tv_sec - tini.tv_sec) + 1e-6*(tend.tv_usec - tini.tv_usec);
+			
+		// Wait to complete a RAM read period
+		if(t > SERVO_RAM_READ_INTERVAL)
+			cout << "WARNING: [in leftArmServosDataThreadFunction] servo RAM read period is exceeded" << endl;
+		else
+			usleep((useconds_t)(1e6*(SERVO_RAM_READ_INTERVAL - t)));
+		
+		// Update the index of the next servo to read
+		indexServo++;
+		if(indexServo > 4)
+		{
+			// Reset servo index
+			indexServo = 1;
+		}
+	}
+	
+	cout << "Left arm servos data thread terminated" << endl;
+
+
+	return 0;
+}
+
+
+
+/*
+ * Thread function for receiving the measurements sent by the right arm servos.
+ */
+static void * rightArmServosDataThreadFunction(void * args)
+{
+	THREAD_ARGS * threadArgs = (THREAD_ARGS*)args;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	char buffer[1024];
+	char tempString[16];
+	ssize_t bytesReceived = 0;
+	struct timeval tini;
+	struct timeval tend;
+	double t = 0;
+	double elapsedTime = 0;
+	int error = 0;
+	
+	
+	cout << "Right arm servos data thread started" << endl;
+	
+	// Init data acquisition loop
+	while(error == 0 && threadArgs->endFlag == false)
+	{
+		// Get current time stamp
+		gettimeofday(&tini, NULL);
+		
+		for(uint8_t n = 1; n <= 4; n++)
+		{
+			// Send the RAM read request packet to the corresponding servo
+			switch(n)
+			{
+				case 1:
+					rightArmController->shoulderPitchServoState->sendStatusUpdateRequest(threadArgs->usbDeviceRightArm);
+					break;
+				case 2:
+					rightArmController->shoulderRollServoState->sendStatusUpdateRequest(threadArgs->usbDeviceRightArm);
+					break;
+				case 3:
+					rightArmController->shoulderYawServoState->sendStatusUpdateRequest(threadArgs->usbDeviceRightArm);
+					break;
+				case 4:
+					rightArmController->elbowPitchServoState->sendStatusUpdateRequest(threadArgs->usbDeviceRightArm);
+					break;
+			}
+			
+			// Wait the reception of data from the servos
+			bytesReceived = read(threadArgs->usbDeviceRightArm, buffer, 1023);
+			if(bytesReceived == 15)
+				rightArmController->updateServoState(buffer, bytesReceived);
+			else
+				cout << "WARNING: [in rightArmServosDataThreadFunction] packet is not complete, " << bytesReceived << " bytes received" << endl;
+		}
+		
+		// Get time stamp at the end of the loop
+		gettimeofday(&tend, NULL);
+		t = (tend.tv_sec - tini.tv_sec) + 1e-6*(tend.tv_usec - tini.tv_usec);
+		
+		// Wait to complete a RAM read period
+		if(t > SERVO_RAM_READ_INTERVAL)
+			cout << "WARNING: [in rightArmServosDataThreadFunction] servo RAM read period is exceeded" << endl;
+		else
+			usleep((useconds_t)(1e6*(SERVO_RAM_READ_INTERVAL - t)));
+	}
+	
+	cout << "Right arm servos data thread terminated" << endl;
+
+
+	return 0;
+}
+
+
+
+/*
+ * Thread function for receiving measurements from the STM32 microcontroller board.
+ */
+static void * stm32BoardDataThreadFunction(void * args)
+{
+	THREAD_ARGS * threadArgs = (THREAD_ARGS*)args;
+	
+	
+	
+	return 0;
+}
+
+
+
+/*
+ * Thread function for micro-controller board data reception. Data packets containing the measurements
+ * of joints deflection provided by the compliant torque sensors are received through the serial interface.
+ */
+static void * controlThreadFunction(void * args)
+{
+	THREAD_ARGS * threadArgs = (THREAD_ARGS*)args;
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	ofstream outDataFile;
+	double angle = 0;
+	double frequency = 0;
+	double dataLogTime = 0.01;
+	extern struct timeval t0;
+	struct timeval t1;
+	struct timeval tini;
+	struct timeval tend;
+	double t = 0;
+	
+	
+	cout << "Control thread started" << endl;
+	
+	float playTime = 1;
+	useconds_t sleepTime = 1000000;
+	
+	
+	
+	
+		
+	playTime = 1;
+	sleepTime = 1000000;
+	
+
+	/***************************** GO TO ZERO POSITION *****************************/
+	cout << "Moving shoulder pitch servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+
+	cout << "Moving shoulder roll servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	
+	cout << "Moving shoulder yaw servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_YAW_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+
+	cout << "Moving elbow pitch servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_ELBOW_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+
+	/***************************** IDENTIFICATION *****************************/
+
+	/*
+	cout << "Moving shoulder pitch servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, 90, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, -90, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, -90, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, 90, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+
+	cout << "Moving shoulder roll servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, -90, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 90, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, 10, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, -10, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	
+	cout << "Moving shoulder yaw servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, -90, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_YAW_SERVO_ID, 90, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_YAW_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, 90, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_YAW_SERVO_ID, -90, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_YAW_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+
+	cout << "Moving elbow pitch servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, -90, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_ELBOW_PITCH_SERVO_ID, 90, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_ELBOW_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, 90, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_ELBOW_PITCH_SERVO_ID, -90, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	rightArmController->moveSingleServo(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_ELBOW_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	*/
+	
+	cout << "Moving elbow pitch servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, 90, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_ELBOW_PITCH_SERVO_ID, -90, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(20000000);
+	
+
+	/***************************** GO TO ZERO POSITION *****************************/
+	cout << "Moving shoulder pitch servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+
+	cout << "Moving shoulder roll servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+	
+	cout << "Moving shoulder yaw servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_SHOULDER_YAW_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+
+	cout << "Moving elbow pitch servos to zero position..." << endl;
+	rightArmController->moveSingleServo(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	leftArmController->moveSingleServo(LEFT_ARM_ELBOW_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(sleepTime);
+
+	
+	
+	return 0;
+}
+
+
+/*********************************************** VISION MODULE INI ***********************************************/
+
+/*
+ * This thread uses vision for obtaining the position and orientation of the grasping points.
+ */
+static void * visionThreadFunction(void * args)
+{
+	THREAD_ARGS * threadArgs = (THREAD_ARGS*)args;
+	VISION_SENSOR_DATA_PACKET * visionSensorDataPacket = NULL;
+	struct sockaddr_in addr;
+	struct sockaddr_in addrVS;
+	socklen_t addrLength;
+	char buffer[1024];
+	int dataReceived;
+	int socketDescriptor;
+	int port = 42000;
+	int error = 0;
+	
+	
+	// Open the socket in stream mode
+	socketDescriptor = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if(socketDescriptor < 0)
+	{
+		error = 1; 
+		cout << endl << "ERROR: [in visionThreadFunction] could not open socket." << endl;
+	}
+	else
+	{
+		// Set listenning address and port for server
+		addr.sin_family = AF_INET;
+		addr.sin_addr.s_addr = INADDR_ANY;
+		addr.sin_port = htons(port);
+
+		// Associates the address to the socket
+		if(bind(socketDescriptor, (struct sockaddr*)&addr, sizeof(struct sockaddr)) < 0)
+		{
+			error = 1;
+			cout << endl << "ERROR: [in visionThreadFunction] could not associate address to socket." << endl;
+		}
+	}
+	
+	
+	while(error == 0 && threadArgs->endFlag == false)
+	{
+		cout << "Waiting data reception" << endl;
+		dataReceived = recvfrom(socketDescriptor, buffer, 1024, 0, (struct sockaddr*)&addrVS, &addrLength);
+		if(dataReceived == sizeof(VISION_SENSOR_DATA_PACKET))
+		{
+			visionSensorDataPacket = (VISION_SENSOR_DATA_PACKET*)buffer;
+			threadArgs->leftArmMarkerPosition[0] = visionSensorDataPacket->leftArmGoalPosition[0];
+			threadArgs->leftArmMarkerPosition[1] = visionSensorDataPacket->leftArmGoalPosition[1];
+			threadArgs->leftArmMarkerPosition[2] = visionSensorDataPacket->leftArmGoalPosition[2];
+			printf("Packet ID: %d, time stamp: %.2lf\n", visionSensorDataPacket->packetID, visionSensorDataPacket->timeStamp);
+			printf("Left arm goal position: {%.2f, %.2f, %.2f}\n", visionSensorDataPacket->leftArmGoalPosition[0], visionSensorDataPacket->leftArmGoalPosition[1], visionSensorDataPacket->leftArmGoalPosition[2]);
+			// printf("Right arm goal position: {%.2f, %.2f, %.2f}\n", visionSensorDataPacket->rightArmGoalPosition[0], visionSensorDataPacket->rightArmGoalPosition[1], visionSensorDataPacket->rightArmGoalPosition[2]);
+		}
+		else
+			cout << "Packet size is not correct" << endl;
+	}
+	
+	
+	return 0;
+}
+
+
+
+/*********************************************** VISION MODULE END ***********************************************/
+
+static void * gcsThreadFunction(void * args)
+{
+	THREAD_ARGS * threadArg = (THREAD_ARGS*)args;
+	struct sockaddr_in addrReceiver;
+	struct sockaddr_in addrSender;
+	socklen_t addrLength;
+	int socketReceiver = -1;
+	int dataReceived = 0;
+	char buffer[1024];
+	bool endFlag = false;
+	struct timeval t0keepAlive;
+	struct timeval t1keepAlive;
+	double keepAliveTimer = 0;
+	bool resetKeepAliveTimer = true;
+	int error = 0;
+	
+	
+	cout << "GCS interface thread started" << endl;
+
+	// Open the socket in datagram mode
+	socketReceiver = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (socketReceiver < 0) 
+	{
+		error = 1;
+		cout << endl << "ERROR: [in gcsThreadFunction] could not open socket" << endl;
+	}
+
+	// Set listenning address and port for server
+	bzero((char*)&addrReceiver, sizeof(struct sockaddr_in));
+	addrReceiver.sin_family = AF_INET;
+	addrReceiver.sin_addr.s_addr = INADDR_ANY;
+	addrReceiver.sin_port = htons(threadArg->udpListeningPort);
+
+	// Associates the address to the socket
+	if (bind(socketReceiver, (struct sockaddr*)&addrReceiver, sizeof(addrReceiver)) < 0)
+	{
+		error = 1; 
+		cout << endl << "ERROR: [in gcsThreadFunction] could not associate address to socket" << endl;
+	}
+
+
+	/******************************** THREAD LOOP START ********************************/
+	
+	while(error == 0 && threadArg->endFlag == false)
+	{
+		// Get initial time stamp for the keep alive message
+		if(resetKeepAliveTimer == true)
+		{
+			resetKeepAliveTimer = false;
+			gettimeofday(&t0keepAlive, NULL);
+		}
+		
+		dataReceived = recvfrom(socketReceiver, buffer, 1023, 0, (struct sockaddr*)&addrSender, &addrLength);
+		if (dataReceived > 0)
+		{
+			// Check if message is correct
+			if(buffer[0] == 'I' && buffer[1] == 'N' && buffer[2] == 'I')
+			{
+				cout << "Keep Alive timer reset" << endl;
+				resetKeepAliveTimer = true;
+			}
+		}
+		
+		// Update keep alive timer
+		gettimeofday(&t1keepAlive, NULL);
+		keepAliveTimer = (t1keepAlive.tv_sec - t0keepAlive.tv_sec) + 1e-6*(t1keepAlive.tv_usec - t0keepAlive.tv_usec);
+		if(keepAliveTimer > 5)
+		{
+			threadArg->keepAliveWarning = 1;
+			cout << "WARNING: [in gcsThreadFunction] Keep Alive Timer exceeded. Retract arms for safety." << endl;
+		}
+	}
+	
+	/******************************** THREAD LOOP END ********************************/
+
+	
+	// Close the socket
+	close(socketReceiver);
+	
+	cout << "GCS interface thread terminated" << endl;
+	
+	
+	return 0;
+}
+
+

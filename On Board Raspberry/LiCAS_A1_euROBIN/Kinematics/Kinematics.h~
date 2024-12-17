@@ -1,0 +1,129 @@
+/*
+ * Copyright (c) 2017 Alejandro Suarez Fernandez-Miranda
+ *
+ * This source code is part of the PhD thesis "Dexterous Aerial Manipulation"
+ * and part of the AEROARMS project.
+ *
+ * University of Seville - Robotics, Vision and Control Group
+ *
+ * The distribution of this source code is not allowed without the consent of the author
+ *
+ * File name: Kinematics.h
+ */
+
+#ifndef KINEMATICS_H_
+#define KINEMATICS_H_
+
+
+// Standard library
+#include <iostream>
+#include <vector>
+#include <stdio.h>
+#include <math.h>
+#include <stdint.h>
+#include <unistd.h>
+#include <sys/time.h>
+
+
+// OpenCV library
+#include <opencv2/core/core.hpp>
+
+// Specific library
+#include "../Constants/Constants.h"
+
+
+// Constant definition
+#define PI							3.14159265
+#define NUM_ITERATIONS				25
+#define N							50
+
+
+using namespace std;
+using namespace cv;
+
+
+class Kinematics
+{
+public:
+
+	/***************** PUBLIC VARIABLES *****************/
+	
+	
+	/***************** PUBLIC METHODS *****************/
+	
+	/*
+	 * Constructor
+	 * */
+	Kinematics(uint8_t _armID, double _armXOffset, double _armYOffset, double _armZOffset);
+
+
+	/*
+	 * Destructor
+	 * */
+	virtual ~Kinematics();
+	
+	
+	/*
+	 * Load camera pose parameters from file
+	 */
+	int initCameraPose(void);
+	
+	
+	/*
+	 * Computes the joint positions (q1: shoulder pitch, q2: shoulder roll, q3: shoulder yaw, q4: elbow pitch)
+	 * for a given XYZ position of the wrist point/end-effector point.
+	 * */
+	int IKSolver(double * q1, double * q2, double * q3, double * q4, double x, double y, double z, double phi);
+	int IKSolver_Q1Approx(double * q1, double * q2, double * q3, double * q4, double x, double y, double z, double phi, double q1_approx);
+	int IKSolver_Decisor(double * q1, double * q2, double * q3, double * q4, double x, double y, double z, double phi);
+
+
+	/*
+	 * Computes the Cartesian position of the wrist point for the joint variables
+	 */
+	void directKinematics(double q1, double q2, double q3, double q4, double * x, double * y, double * z);
+	void directKinematics_Marker(double q1, double q2, double q3, double q4, double * markerPosition);
+
+	/*
+	 * Transform a point in the camera frame into the arm frame
+	 */
+	void tranformPointCoordinates(double x_in, double y_in, double z_in, double * x_out, double * y_out, double * z_out);
+
+
+	/*
+	 * Apply the direct kinematic model for checking if the inverse kinematics solution matches the
+	 * specified XYZ position with an acceptable error.
+	 * */
+	int checkSolution(double x, double y, double z, double q1, double q2, double q3, double q4);
+	
+	
+
+private:
+	/***************** PRIVATE VARIABLES *****************/
+
+	uint8_t armID;
+	cv::Mat armOffsetPosition;
+	cv::Mat cameraOffsetPosition;
+	cv::Mat cameraRotMat;
+	
+	
+	/***************** PRIVATE METHODS *****************/
+	
+	
+	/*
+	 * Look for the closest value of q1 such that  the corresponding evaluated function is closest to zero
+	 */
+	int lookForQ1Value(double x, double y, double z, double * q1, double q2);
+	int lookForQ1ValueApprox(double x, double y, double z, double * q1, double q2, double q1_approx);
+	int lookForQ1Solutions(double x, double y, double z, vector<double> & q1_solutions, double q2);
+
+	/*
+	 * Returns 1 if value > 0, -1 if value < 0 and 0 if value == 0
+	 * */
+	int signDouble(double value);
+
+};
+
+#endif /* SERVOSTATE_H_ */
+
+

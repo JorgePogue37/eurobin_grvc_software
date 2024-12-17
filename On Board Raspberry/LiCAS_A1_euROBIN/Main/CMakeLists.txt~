@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 2.8)
+
+find_package( OpenCV REQUIRED )
+
+include_directories( ${ALEXANDROS6_SOURCE_DIR}/Threads )
+include_directories( ${ALEXANDROS6_SOURCE_DIR}/TaskManager )
+include_directories( ${ALEXANDROS6_SOURCE_DIR}/Kinematics )
+include_directories( ${ALEXANDROS6_SOURCE_DIR}/ArmController )
+include_directories( ${ALEXANDROS6_SOURCE_DIR}/ServoState )
+include_directories( ${ALEXANDROS6_SOURCE_DIR}/DataLog )
+
+add_executable( AlexAndros_6 Main.cpp )
+
+# Link the executable to the libraries. The order of the libraries is important.
+target_link_libraries( AlexAndros_6 DataLog ArmController ServoState Kinematics TaskManager ${OpenCV_LIBS} -pthread )
+

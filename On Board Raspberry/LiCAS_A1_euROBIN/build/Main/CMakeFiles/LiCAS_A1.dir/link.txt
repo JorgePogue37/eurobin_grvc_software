@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/LiCAS_A1.dir/Main.cpp.o -o LiCAS_A1  ../Kinematics/libKinematics.a ../ServoState/libServoState.a ../ArmController/libArmController.a ../TaskManager/libTaskManager.a -pthread ../ArmController/libArmController.a ../Kinematics/libKinematics.a ../ServoState/libServoState.a -pthread ../ModuleInterface/libModuleInterface.a 

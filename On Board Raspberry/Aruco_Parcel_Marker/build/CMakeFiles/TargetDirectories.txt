@@ -1,0 +1,14 @@
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/CMakeFiles/edit_cache.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/CMakeFiles/rebuild_cache.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/UDPPublisher/CMakeFiles/UDPPublisher.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/UDPPublisher/CMakeFiles/edit_cache.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/UDPPublisher/CMakeFiles/rebuild_cache.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/ModuleInterface/CMakeFiles/ModuleInterface.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/ModuleInterface/CMakeFiles/edit_cache.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/ModuleInterface/CMakeFiles/rebuild_cache.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/UDPImage/CMakeFiles/UDPImage.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/UDPImage/CMakeFiles/edit_cache.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/UDPImage/CMakeFiles/rebuild_cache.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/Main/CMakeFiles/Aruco_Parcel_Module.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/Main/CMakeFiles/edit_cache.dir
+/home/grvc/euROBIN/Aruco_Parcel_Marker/build/Main/CMakeFiles/rebuild_cache.dir

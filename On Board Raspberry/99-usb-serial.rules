@@ -1,0 +1,7 @@
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="FTBYNVU3", SYMLINK+="usart_LiCAS_A1_euROBIN_Left"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="FTBYNVTH", SYMLINK+="usart_LiCAS_A1_euROBIN_Right"
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="FTALUJ66", SYMLINK+="usart_LiCAS_AC1_Teleop_Left"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="FTAM4APG", SYMLINK+="usart_LiCAS_AC1_Teleop_Right"
+
+

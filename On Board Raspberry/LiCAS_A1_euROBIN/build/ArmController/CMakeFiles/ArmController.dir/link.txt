@@ -1,0 +1,2 @@
+/usr/bin/ar qc libArmController.a CMakeFiles/ArmController.dir/ArmController.cpp.o
+/usr/bin/ranlib libArmController.a

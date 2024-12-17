@@ -1,0 +1,184 @@
+/*
+ * Copyright (c) 2017 Alejandro Suarez Fernandez-Miranda
+ *
+ * This source code is part of the PhD thesis "Dexterous Aerial Manipulation"
+ * and part of the AEROARMS project.
+ *
+ * University of Seville - Robotics, Vision and Control Group
+ *
+ * The distribution of this source code is not allowed without the consent of the author
+ *
+ * File name: ArmController.h
+ */
+ 
+ 
+#ifndef ARMCONTROLLER_H_
+#define ARMCONTROLLER_H_
+
+
+// Standard library
+#include <iostream>
+#include <stdint.h>
+
+
+// OpenCV library
+
+
+// Specific library
+#include "../Constants/Constants.h"
+#include "../ServoState/ServoState.h"
+
+
+// Structures
+
+
+// Namespaces
+using namespace std;
+
+
+
+class ArmController
+{
+public:
+
+	/***************** PUBLIC VARIABLES *****************/
+	
+	uint8_t armID;
+	ServoState * shoulderPitchServoState;
+	ServoState * shoulderRollServoState;
+	ServoState * shoulderYawServoState;
+	ServoState * elbowPitchServoState;
+	float endEffectorPositionReference[3];	// XYZ position reference in meters of end effector referred to shoulder base, updated in real-time
+	float endEffectorPosition[3];			// XYZ position in meters of end effector referred to shoulder base, updated in real-time
+	float endEffectorOrientation[3];		// Euler ZYX orientation in rad of end effector referred to shoulder base, updated in real-time
+	
+	/***************** PUBLIC METHODS *****************/
+	
+	/*
+	 * Constructor
+	 * */
+	ArmController(uint8_t _armID);
+
+
+	/*
+	 * Destructor
+	 * */
+	virtual ~ArmController();
+
+	
+	/*
+	 * Initiate arm controller: set the ID's of the servos, set torque ON.
+	 */
+	int init(uint8_t shoulderPitchServoID, uint8_t shoulderRollServoID, uint8_t shoulderYawServoID, uint8_t elbowPitchServoID, int usbDevice);
+
+	
+	/*
+	 * Set the sign and offset angle correction for each servo.
+	 */
+	void setServoCorrections(int _signShoulderPitch, int _signShoulderRoll, int _signShoulderYaw, int _signElbowPitch, float _shoulderPitchOffset, float _shoulderRollOffset, float _shoulderYawOffset, float _elbowPitchOffset);
+	
+	
+	/*
+	 * Set the maximum value for the joint limits (in degrees, physical limits, referred to the servo shaft frame)
+	 */
+	void setMaximumJointLimits(float _maxShoulderPitchAngle, float _maxShoulderRollAngle, float _maxShoulderYawAngle, float _maxElbowPitchAngle);
+	
+	
+	/*
+	 * Set the minimum value for the joint limits (in degrees, physical limits, referred to the servo shaft frame)
+	 */
+	void setMinimumJointLimits(float _minShoulderPitchAngle, float _minShoulderRollAngle, float _minShoulderYawAngle, float _minElbowPitchAngle);
+	
+	
+	/*
+	 * Update servo state from the received data packet. The ID of the corresponding servo is determined from the data packet.
+	 */
+	int updateServoState(char * dataPacket, int bytesReceived);
+	
+	
+	/*
+	 * Update the reference Cartesian position of the end effector
+	 */
+	void updateEndEffectorRefPosition(double xref, double yref, double zref);
+	
+	
+	/*
+	 * Enable/disable torque control of the specified servo.
+	 */
+	void servoTorqueControl(uint8_t servoID, uint8_t controlMode, int usbDevice);
+	
+	
+	/*
+	 * Move the indicated joint to the desired absolute position in the specified time. Offset and sign corrections
+	 * are applied, so the desired goal position is defined with respect to the arm frame.
+	 */
+	int moveJoint(uint8_t servoID, float position, float playTime, int usbDevice);
+	
+	
+	/*
+	 * Move the indicated servo to the desired absolute position in the specified time. Only the sign correction
+	 * is applied (no offset correction). This function should be only used for calibration and servo identification.
+	 */
+	int moveServo(uint8_t servoID, float position, float playTime, int usbDevice);
+	
+
+
+private:
+	/***************** PRIVATE VARIABLES *****************/
+
+	uint8_t shoulderPitchServoID;
+	uint8_t shoulderRollServoID;
+	uint8_t shoulderYawServoID;
+	uint8_t elbowPitchServoID;
+	uint8_t wristRollServoID;
+	uint8_t wristPitchServoID;
+	uint8_t wristYawServoID;
+	
+	// Maximum/minimum joint limits (in degrees, physical limits, referred to the servo shaft frame)
+	float maxShoulderPitchAngle;
+	float maxShoulderRollAngle;
+	float maxShoulderYawAngle;
+	float maxElbowPitchAngle;
+	float minShoulderPitchAngle;
+	float minShoulderRollAngle;
+	float minShoulderYawAngle;
+	float minElbowPitchAngle;
+	
+	// Calibration offset correction (in degrees, physical limits, referred to the servo shaft frame)
+	float shoulderPitchOffset;
+	float shoulderRollOffset;
+	float shoulderYawOffset;
+	float elbowPitchOffset;
+	
+	// Kinematic sign correction (transformation between right-hand sign criteria and servo shaft frame)
+	int signShoulderPitch;
+	int signShoulderRoll;
+	int signShoulderYaw;
+	int signElbowPitch;
+	
+	
+	/***************** PRIVATE METHODS *****************/
+
+	/*
+	 * Limit joint position taking into account mechanical constraints and recommended operation range.
+	 */
+	float limitServoRotation(uint8_t servoID, float position);
+	
+
+	/*
+	 * Send data through the serial port
+	 */
+	int sendData(char * data, uint8_t dataLength, int usbDevice);
+	
+
+	/*
+	 * Compute the checksum 1 and checksum 2 of the packet passed as first argument with the specified length.
+	 */
+	void computeChecksum(char * packet, uint8_t packetSize);
+	
+
+};
+
+#endif /* ARMCONTROLLER_H_ */
+
+

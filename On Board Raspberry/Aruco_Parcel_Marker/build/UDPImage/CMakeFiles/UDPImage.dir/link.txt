@@ -1,0 +1,2 @@
+/usr/bin/ar qc libUDPImage.a CMakeFiles/UDPImage.dir/UDPImage.cpp.o
+/usr/bin/ranlib libUDPImage.a

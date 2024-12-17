@@ -1,0 +1,2 @@
+/usr/bin/ar qc libUDPPublisher.a CMakeFiles/UDPPublisher.dir/UDPPublisher.cpp.o
+/usr/bin/ranlib libUDPPublisher.a

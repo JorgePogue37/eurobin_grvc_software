@@ -1,0 +1,2 @@
+/usr/bin/ar qc libModuleInterface.a CMakeFiles/ModuleInterface.dir/ModuleInterface.cpp.o
+/usr/bin/ranlib libModuleInterface.a

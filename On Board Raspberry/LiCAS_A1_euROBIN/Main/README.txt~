@@ -1,0 +1,15 @@
+CONFIGURABLE PARAMETERS
+
+- In Main.c: position of the left/right arm coordinate system with respect to the common coordinate system:
+
+	Kinematics * leftArmKinematics = new Kinematics(leftArm_ID, X_offset, Y_offset, Z_offset);
+	Kinematics * rightArmKinematics = new Kinematics(rightArm_ID, X_offset, -Y_offset, Z_offset);
+
+- In Main.c: hardware enable flags:
+	
+	const int ARMS_CONTROL_ENABLED = 1;
+	const int ARMS_FEEDBACK_ENABLED = 1;
+	const int STM32BOARD_AVAILABLE = 1;
+
+
+

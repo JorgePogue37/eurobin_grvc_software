@@ -1,0 +1,165 @@
+/*
+ * Copyright (c) 2017 Alejandro Suarez Fernandez-Miranda
+ *
+ * This source code is part of the PhD thesis "Dexterous Aerial Manipulation"
+ * and part of the AEROARMS project.
+ *
+ * University of Seville - Robotics, Vision and Control Group
+ *
+ * The distribution of this source code is not allowed without the consent of the author
+ *
+ * File name: ServoState.cpp
+ */
+
+#include "ServoState.h"
+#include "../Structures/Structures.h"
+
+
+
+/*
+ * Constructor
+ * */
+ServoState::ServoState(uint8_t _servoID, int _servoModel)
+{
+	// Set the ID and model of the servo
+	servoID = _servoID;
+	servoModel = _servoModel;
+	
+	// Init the sign correction and offset angle
+	signCorrection = 1;
+	offsetAngle = 0;
+}
+
+
+/*
+ * Destructor
+ * */
+ServoState::~ServoState()
+{
+}
+
+
+/*
+ * Set the sign and offset correction specific to the servo
+ */
+void ServoState::setJointCorrections(int _signCorrection, int _offsetAngle)
+{
+	// Set the sign correction and offset angle
+	signCorrection = _signCorrection;
+	offsetAngle = _offsetAngle;
+}
+	
+	
+/*
+ * Send a request packet for reading Voltage (RAM addres 54), Temperature (55), Tick (57), Calibrated Position (58-59), Absolute Position (59-60), Differential Position (61-62), PWM (64-65), Absolute 2nd Position (66-67), and Absolute Goal Position (RAM address 68-69)
+ *
+ *	Arguments:
+ *		- usbDevice: serial port handler
+ */
+void ServoState::sendStatusUpdateRequest(int usbDevice)
+{
+	char packet[16];
+	
+
+	// Set the fields of the packet
+	packet[0] = 0xFF;		// Header
+	packet[1] = 0xFF;
+	packet[2] = 0x09;		// Packet size
+	packet[3] = servoID;	// Servo ID
+	packet[4] = 0x04;		// RAM read
+	packet[7] = 54;			// Initial address (Calibrated position RAM register)
+	packet[8] = 16;			// Bytes to read (until Absolute Goal Position)
+	
+	// Compute the checksum
+	computeChecksum((char*)packet, packet[2]);
+	
+	// Send the packet
+	sendData((char*)packet, packet[2], usbDevice);
+}
+	
+	
+/*
+ * Update servo state from the received data packet. The position, speed and positionRef variables are sign and offset corrected.
+ */
+void ServoState::updateServoState(char * dataPacket)
+{
+	Int16ToByteArray aux;
+	uint8_t byte1 = 0;
+	uint8_t byte2 = 0;
+	
+	
+	byte1 = (uint8_t)dataPacket[9];
+	byte2 = (uint8_t)dataPacket[10];
+	// position = signCorrection*(0.325*(byte1 + 256*byte2 - 512) - offsetAngle);
+	position = signCorrection*0.325*(byte1 + 256*byte2 - 512) - offsetAngle;
+				
+	// Get speed value codified as an int16_t
+	aux.str[1] = dataPacket[12];
+	aux.str[0] = dataPacket[11];
+	speed = signCorrection*29.09*aux.value;
+	
+	// Get the position reference		
+	byte1 = (uint8_t)dataPacket[17];
+	byte2 = (uint8_t)dataPacket[18];
+	// positionRef = signCorrection*(0.325*(byte1 + 256*byte2 - 512) - offsetAngle);
+	positionRef = signCorrection*0.325*(byte1 + 256*byte2 - 512) - offsetAngle;
+
+	// printf("Servo %d <pos, speed> = <%.2f [deg], %.2f [deg/s]>\n", servoID, position, speed);
+}
+
+
+/*
+ * Send data through the serial port
+ */
+int ServoState::sendData(char * data, uint8_t dataLength, int usbDevice)
+{
+	ssize_t bytesSent = 0;
+	int error = 0;
+	
+	
+	// Send data
+	bytesSent = write(usbDevice, data, dataLength);
+	if(bytesSent <= 0)
+	{
+		error = 1;
+		cout << "ERROR: [in ArmController::sendData] could not send any data" << endl;
+	}
+	else if(bytesSent < dataLength)
+	{
+		error = 2;
+		cout << "ERROR: [in ArmController::sendData] could not send all data" << endl;
+	}
+
+	
+	return error;
+}
+
+
+/*
+ * Compute the checksum 1 and checksum 2 of the packet passed as first argument with the specified length.
+ */
+void ServoState::computeChecksum(char * packet, uint8_t packetSize)
+{
+	uint8_t checksum1 = 0;
+	uint8_t checksum2 = 0;
+	uint8_t checksumTemp = 0;
+	
+	
+	// Compute checksum-1
+	checksumTemp = packet[2] ^ packet[3] ^ packet[4];
+	for(uint8_t n = 7; n < packetSize; n++)
+		checksumTemp ^= packet[n];
+	checksum1 = checksumTemp & 0xFE;
+	
+	// Set checksum-1 to packet
+	packet[5] = checksum1;
+	
+	// Compute checksum-2
+	checksum2 = (~checksumTemp) & 0xFE;
+	
+	// Set checksum-2
+	packet[6] = checksum2;
+}
+
+
+

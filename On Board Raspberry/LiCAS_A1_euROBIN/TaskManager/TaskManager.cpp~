@@ -1,0 +1,1203 @@
+/*
+ * Copyright (c) 2020 LiCAS Robotic Arms
+ *
+ * Developer: Alejandro Suarez Fernandez-Miranda
+ *
+ * This source code is part of LiCAS Robotic Arms.
+ *
+ * The distribution of this source code is not allowed without the consent of the author
+ *
+ * File name: TaskManager.cpp
+ */
+
+#include "TaskManager.h"
+
+
+
+/*
+ * Constructor
+ * */
+TaskManager::TaskManager(THREAD_ARGS * _threadArgs)
+{
+	// Assign the pointer to the THREAD_ARGS structure
+	threadArgs = _threadArgs;
+	
+	// Initialize the fields of the command packet
+	strncpy(cmdPacket.header, "STM", 3);
+	cmdPacket.packetID = 0;
+	cmdPacket.pwm1 = 0;
+	cmdPacket.pwm2 = 0;
+	
+	leftGripperClosed = false;
+	rightGripperClosed = false;
+}
+
+
+/*
+ * Destructor
+ * */
+TaskManager::~TaskManager()
+{
+	threadArgs = NULL;
+}
+
+
+/*
+ *  Ask user to specify the desired rotation angle for the servo of both left and right arms
+ */
+void TaskManager::dualArmServosCalibration()
+{
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	float playTime = 1;
+	float angle = 0;
+	int armID = 0;
+	int servoID = 0;
+	
+	
+	cout << "\t\t\t--- ARM SERVOS CALIBRATION ---" << endl;
+	cout << "(Note: specified angles are directly applied to servos, with no sign/offset correction)" << endl;
+
+	do
+	{
+		cout << endl;
+		cout << "\t" << "1. Calibrate left arm" << endl;
+		cout << "\t" << "2. Calibrate right arm" << endl;
+		cout << "\t" << "0. Exit" << endl;
+		cout << "\t" << " - Option: ";
+		scanf("%d", &armID);
+		fflush(stdin);
+		
+		if(armID == 1 || armID == 2)
+		{
+			do
+			{
+				cout << endl;
+				cout << "\t\t" << "1. Calibrate shoulder pitch servo" << endl;
+				cout << "\t\t" << "2. Calibrate shoulder roll servo" << endl;
+				cout << "\t\t" << "3. Calibrate shoulder yaw servo" << endl;
+				cout << "\t\t" << "4. Calibrate elbow pitch servo" << endl;
+				cout << "\t\t" << "0. Exit" << endl;
+				cout << "\t\t" << " - Option: ";
+				scanf("%d", &servoID);
+				fflush(stdin);
+				
+				if(servoID >= 1 && servoID <= 4)
+				{
+					cout << endl;
+					cout << "\t\t" << " - Angle: ";
+					scanf("%f", &angle);
+					
+					if(armID == 1)
+					{
+						if(servoID == 1)
+							leftArmController->moveServo(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, angle, playTime, threadArgs->usbDeviceLeftArm);
+						else if(servoID == 2)
+							leftArmController->moveServo(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, angle, playTime, threadArgs->usbDeviceLeftArm);
+						else if(servoID == 3)
+							leftArmController->moveServo(LEFT_ARM_SHOULDER_YAW_SERVO_ID, angle, playTime, threadArgs->usbDeviceLeftArm);
+						else if(servoID == 4)
+							leftArmController->moveServo(LEFT_ARM_ELBOW_PITCH_SERVO_ID, angle, playTime, threadArgs->usbDeviceLeftArm);
+					}
+					else
+					{
+						if(servoID == 1)
+							rightArmController->moveServo(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, angle, playTime, threadArgs->usbDeviceRightArm);
+						else if(servoID == 2)
+							rightArmController->moveServo(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, angle, playTime, threadArgs->usbDeviceRightArm);
+						else if(servoID == 3)
+							rightArmController->moveServo(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, angle, playTime, threadArgs->usbDeviceRightArm);
+						else if(servoID == 4)
+							rightArmController->moveServo(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, angle, playTime, threadArgs->usbDeviceRightArm);
+					}
+				}
+				
+			} while(servoID != 0);
+		}
+	} while(armID != 0);
+}
+
+
+void TaskManager::dualArmJointsIdentification()
+{
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	float playTime = 1;
+	float angle = 0;
+	int armID = 0;
+	int servoID = 0;
+	
+	
+	cout << "\t\t\t--- ARM JOINTS IDENTIFICATION ---" << endl;
+
+	do
+	{
+		cout << endl;
+		cout << "\t" << "1. Identify left arm" << endl;
+		cout << "\t" << "2. Identify right arm" << endl;
+		cout << "\t" << "0. Exit" << endl;
+		cout << "\t" << " - Option: ";
+		scanf("%d", &armID);
+		fflush(stdin);
+		
+		if(armID == 1 || armID == 2)
+		{
+			do
+			{
+				cout << endl;
+				cout << "\t\t" << "1. Identify shoulder pitch joint" << endl;
+				cout << "\t\t" << "2. Identify shoulder roll joint" << endl;
+				cout << "\t\t" << "3. Identify shoulder yaw joint" << endl;
+				cout << "\t\t" << "4. Identify elbow pitch joint" << endl;
+				cout << "\t\t" << "0. Exit" << endl;
+				cout << "\t\t" << " - Option: ";
+				scanf("%d", &servoID);
+				fflush(stdin);
+				
+				if(servoID >= 1 && servoID <= 4)
+				{
+					cout << endl;
+					cout << "\t\t" << " - Angle: ";
+					scanf("%f", &angle);
+					
+					if(armID == 1)
+					{
+						if(servoID == 1)
+							leftArmController->moveJoint(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, angle, playTime, threadArgs->usbDeviceLeftArm);
+						else if(servoID == 2)
+							leftArmController->moveJoint(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, angle, playTime, threadArgs->usbDeviceLeftArm);
+						else if(servoID == 3)
+							leftArmController->moveJoint(LEFT_ARM_SHOULDER_YAW_SERVO_ID, angle, playTime, threadArgs->usbDeviceLeftArm);
+						else if(servoID == 4)
+							leftArmController->moveJoint(LEFT_ARM_ELBOW_PITCH_SERVO_ID, angle, playTime, threadArgs->usbDeviceLeftArm);
+					}
+					else
+					{
+						if(servoID == 1)
+							rightArmController->moveJoint(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, angle, playTime, threadArgs->usbDeviceRightArm);
+						else if(servoID == 2)
+							rightArmController->moveJoint(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, angle, playTime, threadArgs->usbDeviceRightArm);
+						else if(servoID == 3)
+							rightArmController->moveJoint(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, angle, playTime, threadArgs->usbDeviceRightArm);
+						else if(servoID == 4)
+							rightArmController->moveJoint(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, angle, playTime, threadArgs->usbDeviceRightArm);
+					}
+				}
+				
+			} while(servoID != 0);
+		}
+	} while(armID != 0);
+}
+
+
+/*
+ * Move the dual arm system to the rest position
+ */
+void TaskManager::goToRestPosition()
+{
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	useconds_t sleepTime = 1000000;
+	float playTime = 2;
+	
+	
+	// Open left/right grippers
+	operateGrippers(GRIPPER_CMD_OPEN, GRIPPER_CMD_OPEN);
+	
+	// Move shoulder pitch joints
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, -60.0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, -60.0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(sleepTime);
+
+	// Move shoulder roll joints
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, -0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	
+	// Move shoulder yaw joints
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_YAW_SERVO_ID, 0.0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, -0.0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+
+	// Move elbow pitch joints
+	leftArmController->moveJoint(LEFT_ARM_ELBOW_PITCH_SERVO_ID, -135, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	rightArmController->moveJoint(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, -135, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	
+}
+
+
+/*
+ * Move the dual arm system to the operation position
+ */
+void TaskManager::goToOperationPosition()
+{
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	float playTime = 2;
+	
+	
+	// Open left/right grippers
+	operateGrippers(GRIPPER_CMD_OPEN, GRIPPER_CMD_OPEN);
+	
+	// Move shoulder pitch joints
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+
+	// Move shoulder roll joints
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	
+	// Move shoulder yaw joints
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_YAW_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+
+	// Move elbow pitch joints
+	leftArmController->moveJoint(LEFT_ARM_ELBOW_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	rightArmController->moveJoint(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, 0, playTime, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+}
+
+
+/*
+ * Open/close the left/right gripper. Specify 1 for gripper open, 0 for gripper close, and 0 for no operation.
+ */
+int TaskManager::operateGrippers(uint8_t leftGripperCmd, uint8_t rightGripperCmd)
+{
+	uint8_t * pointer = (uint8_t*)(&cmdPacket + 3);
+	uint8_t checksum = 0;
+	ssize_t bytesSent = 0;
+	uint16_t closeValue = 90;
+	int k = 0;
+	int error = 0;
+	
+	
+	cout << "Operate grippers" << endl;
+	
+	// Set the value of the PWM signal for the left gripper servo (range 900 to 5500)
+	switch(leftGripperCmd)
+	{
+		case GRIPPER_CMD_OPEN:
+			cmdPacket.pwm1 = closeValue;
+			break;
+		case GRIPPER_CMD_CLOSE:
+			cmdPacket.pwm1 = 0;
+			break;
+		case GRIPPER_CMD_NOP:
+			if(leftGripperClosed == false)
+			{
+				cmdPacket.pwm1 = 0;
+				leftGripperClosed = true;
+			}
+			else
+			{
+				cmdPacket.pwm1 = closeValue;
+				leftGripperClosed = false;
+			}
+			break;
+	}
+	
+	// Set the value of the PWM signal for the right gripper servo (range 900 to 5500)
+	switch(rightGripperCmd)
+	{
+		case GRIPPER_CMD_OPEN:
+			cmdPacket.pwm2 = 0;
+			break;
+		case GRIPPER_CMD_CLOSE:
+			cmdPacket.pwm2 = closeValue;
+			break;
+		case GRIPPER_CMD_NOP:
+			if(rightGripperClosed == false)
+			{
+				cmdPacket.pwm2 = closeValue;
+				rightGripperClosed = true;
+			}
+			else
+			{
+				cmdPacket.pwm2 = 0;
+				rightGripperClosed = false;
+			}
+			break;
+	}
+	
+	// Compute checksum
+	for(k = 3; k < sizeof(COMMAND_PACKET) - 1; k++)
+	{
+		checksum ^= *pointer;
+		pointer++;
+	}
+	cmdPacket.checksum = checksum;
+	
+	// Send data packet
+	bytesSent = write(threadArgs->usbDeviceSTM32Board, (char*)&cmdPacket, sizeof(COMMAND_PACKET));
+	if(bytesSent <= 0)
+	{
+		error = 1;
+		cout << "ERROR: [in TaskManager::operateGrippers] could not send any data through USART." << endl;
+	}
+	else if(bytesSent < sizeof(COMMAND_PACKET))
+	{
+		error = 1;
+		cout << "ERROR: [in TaskManager::operateGrippers] could not send all data through USART." << endl;
+	}
+	
+	
+	return error;
+}
+	
+	
+/*
+ * Teleoperation with 3DConnexon mouse
+ */
+void TaskManager::teleoperation3DConnexion()
+{
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	extern struct timeval t0;
+	struct timeval t1;
+	struct timeval tini;
+	struct timeval tend;
+	double t = 0;
+	float playTime = 1;
+	useconds_t sleepTime = 1000000;
+	int iterationCounter = 0;
+
+	// Reference Cartesian position
+	double xLref = 0;
+	double yLref = 0;
+	double zLref = 0;
+	double xRref = 0;
+	double yRref = 0;
+	double zRref = 0;
+	// Feedback Cartesian position
+	double xL = 0;
+	double yL = 0;
+	double zL = 0;
+	double xR = 0;
+	double yR = 0;
+	double zR = 0;
+	// Feedback joints position
+	double q1L = 0;
+	double q2L = 0;
+	double q3L = 0;
+	double q4L = 0;
+	double q1R = 0;
+	double q2R = 0;
+	double q3R = 0;
+	double q4R = 0;
+	// Incremental variables
+	float deltaXL = 0;
+	float deltaYL = 0;
+	float deltaZL = 0;
+	float deltaXR = 0;
+	float deltaYR = 0;
+	float deltaZR = 0;
+	bool leftArmPositionOutOfBounds = false;
+	bool rightArmPositionOutOfBounds = false;
+	
+	// Grasping variables
+	uint8_t leftButton3DConnexion_before = 0;
+	uint8_t rightButton3DConnexion_before = 0;
+	int errorKinematicsLeftArm = 0;
+	int errorKinematicsRightArm = 0;
+	int mode = 0;
+	
+	
+
+	cout << "Teleoperation with 3DConnexion mouse" << endl;
+	
+	
+	// Move arms to initial position
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, 0, 1.0, threadArgs->usbDeviceLeftArm);
+	usleep(1000);
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 20.0, 1.0, threadArgs->usbDeviceLeftArm);
+	usleep(1000);
+	leftArmController->moveJoint(LEFT_ARM_SHOULDER_YAW_SERVO_ID, -10, 1.0, threadArgs->usbDeviceLeftArm);
+	usleep(1000);
+	leftArmController->moveJoint(LEFT_ARM_ELBOW_PITCH_SERVO_ID, -90, 1.0, threadArgs->usbDeviceLeftArm);
+	usleep(1000);
+			
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, 0, 1.0, threadArgs->usbDeviceRightArm);
+	usleep(1000);
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, -20.0, 1.0, threadArgs->usbDeviceRightArm);
+	usleep(1000);
+	rightArmController->moveJoint(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, 10, 1.0, threadArgs->usbDeviceRightArm);
+	usleep(1000);
+	rightArmController->moveJoint(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, -90, 1.0, threadArgs->usbDeviceRightArm);
+	usleep(1000);
+	usleep(1250000);
+	
+	
+	// Initializes the reference position
+	q1L = 0.017453*leftArmController->shoulderPitchServoState->position;
+	q2L = 0.017453*leftArmController->shoulderRollServoState->position;
+	q3L = 0.017453*leftArmController->shoulderYawServoState->position;
+	q4L = 0.017453*leftArmController->elbowPitchServoState->position;
+	threadArgs->leftArmKinematics->directKinematics(q1L, q2L, q3L, q4L, &xL, &yL, &zL);
+	xLref = xL;
+	yLref = yL;
+	zLref = zL;
+	q1R = 0.017453*rightArmController->shoulderPitchServoState->position;
+	q2R = 0.017453*rightArmController->shoulderRollServoState->position;
+	q3R = 0.017453*rightArmController->shoulderYawServoState->position;
+	q4R = 0.017453*rightArmController->elbowPitchServoState->position;
+	threadArgs->rightArmKinematics->directKinematics(q1R, q2R, q3R, q4R, &xR, &yR, &zR);
+	xRref = xR;
+	yRref = yR;
+	zRref = zR;
+	
+	
+	// Teleoperation loop
+	while(threadArgs->endFlag == false && threadArgs->gcsCode == GCS_CODE_TELEOPERATION)
+	{
+		// Get time stamp at the begining of the control loop
+		gettimeofday(&tini, NULL);
+	
+		// Obtain the Cartesian position of the left and right arms
+		q1L = 0.017453*leftArmController->shoulderPitchServoState->position;
+		q2L = 0.017453*leftArmController->shoulderRollServoState->position;
+		q3L = 0.017453*leftArmController->shoulderYawServoState->position;
+		q4L = 0.017453*leftArmController->elbowPitchServoState->position;
+		threadArgs->leftArmKinematics->directKinematics(q1L, q2L, q3L, q4L, &xL, &yL, &zL);
+		printf("Left arm Cartesian position = {%.2lf, %.2lf, %.2lf} [cm]\n", 100*xL, 100*yL, 100*zL);
+		q1R = 0.017453*rightArmController->shoulderPitchServoState->position;
+		q2R = 0.017453*rightArmController->shoulderRollServoState->position;
+		q3R = 0.017453*rightArmController->shoulderYawServoState->position;
+		q4R = 0.017453*rightArmController->elbowPitchServoState->position;
+		threadArgs->rightArmKinematics->directKinematics(q1R, q2R, q3R, q4R, &xR, &yR, &zR);
+		printf("Right arm Cartesian position = {%.1lf, %.1lf, %.1lf} [cm]\n", 100*xR, 100*yR, 100*zR);		
+
+		if(threadArgs->leftButton3DConnexion == 1)
+			mode = 0;
+		if(threadArgs->rightButton3DConnexion == )
+			mode = 1;
+				
+		// Obtain the incremental position joint variables
+		if(mode == 0)
+		{
+			// Left arm X-axis
+			deltaXL = threadArgs->teleoperatedPosition[0]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+			if(fabs(threadArgs->teleoperatedPosition[5]) > THRESHOLD_3D_CONNEXION_ROTATION)
+				deltaXL -= threadArgs->teleoperatedPosition[5]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_ROTATION_VALUE;
+			// Left arm Y-axis
+			deltaYL = threadArgs->teleoperatedPosition[1]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+			// deltaYL += threadArgs->teleoperatedPosition[4]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_ROTATION_VALUE;
+			// Left arm Z-axis
+			deltaZL = threadArgs->teleoperatedPosition[2]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+			// deltaZL += threadArgs->teleoperatedPosition[3]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_ROTATION_VALUE
+			
+			// Right arm X-axis		
+			deltaXR = threadArgs->teleoperatedPosition[0]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+			if(fabs(threadArgs->teleoperatedPosition[5]) > THRESHOLD_3D_CONNEXION_ROTATION)
+				deltaXR += threadArgs->teleoperatedPosition[5]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_ROTATION_VALUE;
+			// Right arm Y-axis
+			deltaYR = threadArgs->teleoperatedPosition[1]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+			// deltaYR -= threadArgs->teleoperatedPosition[4]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_ROTATION_VALUE;
+			// Right arm Z-axis
+			deltaZR = threadArgs->teleoperatedPosition[2]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+			// deltaZR -= threadArgs->teleoperatedPosition[3]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_ROTATION_VALUE;
+		}
+		else
+		{
+			deltaYL = threadArgs->teleoperatedPosition[1]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+			deltaYR = threadArgs->teleoperatedPosition[1]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+		}	
+		// printf("Delta_XYZ = {%.1f, %.1f, %.1f} [cm]\n", 100*deltaX, 100*deltaY, 100*deltaZ);
+		
+		// Apply temporarily the increment to the position reference. This operation will be undone in case of kinematic error.
+		xLref += deltaXL;
+		yLref += deltaYL;
+		zLref += deltaZL;
+		xRref += deltaXR;
+		yRref += deltaYR;
+		zRref += deltaZR;
+		
+		// Reset the error flags
+		errorKinematicsLeftArm = 0;
+		errorKinematicsRightArm = 0;
+		leftArmPositionOutOfBounds = false;
+		rightArmPositionOutOfBounds = false;
+		
+		// Check if the new position is within the arms limits
+		// Sphere of operation check
+		/*
+		if(sqrt(xLref*xLref + yLref*yLref + zLref*zLref) > 0.9*(L1 + L2))
+			leftArmPositionOutOfBounds = true;
+		if(sqrt(xRref*xRref + yRref*yRref + zRref*zRref) > 0.9*(L1 + L2))
+			rightArmPositionOutOfBounds = true;
+		*/
+		/*
+		// X-axis check
+		if(xLref < -0.1)
+			leftArmPositionOutOfBounds = true;
+		if(xRref < -0.1)
+			rightArmPositionOutOfBounds = true;
+		// Y-axis check
+		if(fabs(yLref) > 0.9*L2)
+			leftArmPositionOutOfBounds = true;
+		if(fabs(yRref) > 0.9*L2)
+			rightArmPositionOutOfBounds = true;
+		// Z-axis check
+		if(fabs(zLref) > -0.075)
+			leftArmPositionOutOfBounds = true;
+		if(fabs(zRref) > -0.075)
+			rightArmPositionOutOfBounds = true;
+		*/
+		
+		// Solve the inverse kinematics if the reference position is within the operation limits
+		if(leftArmPositionOutOfBounds == false)
+			errorKinematicsLeftArm = threadArgs->leftArmKinematics->IKSolver_Q1Approx(&q1L, &q2L, &q3L, &q4L, xLref, yLref, zLref, 20*PI/180, q1L);
+		if(rightArmPositionOutOfBounds == false)
+			errorKinematicsRightArm = threadArgs->rightArmKinematics->IKSolver_Q1Approx(&q1R, &q2R, &q3R, &q4R, xRref, yRref, zRref, -20*PI/180, q1R);
+		
+		// Set the play time
+		playTime = 2*TELEOPERATION_CONTROL_PERIOD;
+
+		// Apply the motion commands if there is no error. Otherwise undo the increment.
+		if(errorKinematicsLeftArm != 0 || leftArmPositionOutOfBounds == true || errorKinematicsRightArm != 0 || rightArmPositionOutOfBounds == true)
+		{
+			xLref -= deltaXL;
+			yLref -= deltaYL;
+			zLref -= deltaZL;
+			xRref -= deltaXR;
+			yRref -= deltaYR;
+			zRref -= deltaZR;
+		}
+		else
+		{
+			leftArmController->updateEndEffectorRefPosition(xLref, yLref, zLref);
+			leftArmController->moveJoint(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, 57.296*q1L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			leftArmController->moveJoint(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 57.296*q2L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			leftArmController->moveJoint(LEFT_ARM_SHOULDER_YAW_SERVO_ID, 57.296*q3L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			leftArmController->moveJoint(LEFT_ARM_ELBOW_PITCH_SERVO_ID, 57.296*q4L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			
+			rightArmController->updateEndEffectorRefPosition(xRref, yRref, zRref);
+			rightArmController->moveJoint(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, 57.296*q1R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+			rightArmController->moveJoint(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, 57.296*q2R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+			rightArmController->moveJoint(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, 57.296*q3R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+			rightArmController->moveJoint(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, 57.296*q4R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+		}
+		
+		// Open/close left/right gripper using the 3DConnexion buttons
+		if(threadArgs->leftButton3DConnexion == 1 && leftButton3DConnexion_before == 0)
+			operateGrippers(GRIPPER_CMD_SWITCH, GRIPPER_CMD_NOP);
+		leftButton3DConnexion_before = threadArgs->leftButton3DConnexion;
+		if(threadArgs->rightButton3DConnexion == 1 && rightButton3DConnexion_before == 0)
+			operateGrippers(GRIPPER_CMD_NOP, GRIPPER_CMD_SWITCH);
+		rightButton3DConnexion_before = threadArgs->rightButton3DConnexion;
+		
+		// Close the left/right gripper using the contact sensors
+		if(threadArgs->armState.leftGripperContact == 1)
+			operateGrippers(GRIPPER_CMD_CLOSE, GRIPPER_CMD_NOP);
+		if(threadArgs->armState.rightGripperContact == 1)
+			operateGrippers(GRIPPER_CMD_NOP, GRIPPER_CMD_CLOSE);
+		
+		
+		// Get time stamp at the end of the control loop
+		gettimeofday(&tend, NULL);
+		t = (tend.tv_sec - tini.tv_sec) + 1e-6*(tend.tv_usec - tini.tv_usec);
+		
+		// Wait time
+		if(t > TELEOPERATION_CONTROL_PERIOD)
+			cout << "WARNING: [in teleoperation3DConnexion]: control period exceeded." << endl;
+		else
+			usleep((useconds_t)(1e6*(TELEOPERATION_CONTROL_PERIOD - t)));
+	}
+}
+
+
+/*
+ * Teleoperation with 3DConnexon mouse
+ */
+void TaskManager::teleoperationGraspWithArms()
+{
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	extern struct timeval t0;
+	struct timeval t1;
+	struct timeval tini;
+	struct timeval tend;
+	double t = 0;
+	float playTime = 1;
+	useconds_t sleepTime = 1000000;
+	int iterationCounter = 0;
+
+	// Reference Cartesian position
+	double xLref = 0;
+	double yLref = 0;
+	double zLref = 0;
+	double xRref = 0;
+	double yRref = 0;
+	double zRref = 0;
+	// Feedback Cartesian position
+	double xL = 0;
+	double yL = 0;
+	double zL = 0;
+	double xR = 0;
+	double yR = 0;
+	double zR = 0;
+	// Feedback joints position
+	double q1L = 0;
+	double q2L = 0;
+	double q3L = 0;
+	double q4L = 0;
+	double q1R = 0;
+	double q2R = 0;
+	double q3R = 0;
+	double q4R = 0;
+	// Incremental variables
+	float deltaXL = 0;
+	float deltaYL = 0;
+	float deltaZL = 0;
+	float deltaXR = 0;
+	float deltaYR = 0;
+	float deltaZR = 0;
+	bool leftArmPositionOutOfBounds = false;
+	bool rightArmPositionOutOfBounds = false;
+	
+	// Grasping variables
+	uint8_t leftButton3DConnexion_before = 0;
+	uint8_t rightButton3DConnexion_before = 0;
+	int errorKinematicsLeftArm = 0;
+	int errorKinematicsRightArm = 0;
+	
+	
+
+	cout << "Teleoperation Arms Grasping" << endl;
+	
+	
+	// Initializes the reference position
+	q1L = 0.017453*leftArmController->shoulderPitchServoState->position;
+	q2L = 0.017453*leftArmController->shoulderRollServoState->position;
+	q3L = 0.017453*leftArmController->shoulderYawServoState->position;
+	q4L = 0.017453*leftArmController->elbowPitchServoState->position;
+	threadArgs->leftArmKinematics->directKinematics(q1L, q2L, q3L, q4L, &xL, &yL, &zL);
+	xLref = xL;
+	yLref = yL;
+	zLref = zL;
+	q1R = 0.017453*rightArmController->shoulderPitchServoState->position;
+	q2R = 0.017453*rightArmController->shoulderRollServoState->position;
+	q3R = 0.017453*rightArmController->shoulderYawServoState->position;
+	q4R = 0.017453*rightArmController->elbowPitchServoState->position;
+	threadArgs->rightArmKinematics->directKinematics(q1R, q2R, q3R, q4R, &xR, &yR, &zR);
+	xRref = xR;
+	yRref = yR;
+	zRref = zR;
+	
+	
+	// Teleoperation loop
+	while(threadArgs->endFlag == false && threadArgs->gcsCode == GCS_CODE_TELEOPERATION_ARMS_GRASP)
+	{
+		// Get time stamp at the begining of the control loop
+		gettimeofday(&tini, NULL);
+	
+		// Obtain the Cartesian position of the left and right arms
+		q1L = 0.017453*leftArmController->shoulderPitchServoState->position;
+		q2L = 0.017453*leftArmController->shoulderRollServoState->position;
+		q3L = 0.017453*leftArmController->shoulderYawServoState->position;
+		q4L = 0.017453*leftArmController->elbowPitchServoState->position;
+		threadArgs->leftArmKinematics->directKinematics(q1L, q2L, q3L, q4L, &xL, &yL, &zL);
+		printf("- Left arm Cartesian position = {%.2lf, %.2lf, %.2lf} [cm]\n", 100*xL, 100*yL, 100*zL);
+		q1R = 0.017453*rightArmController->shoulderPitchServoState->position;
+		q2R = 0.017453*rightArmController->shoulderRollServoState->position;
+		q3R = 0.017453*rightArmController->shoulderYawServoState->position;
+		q4R = 0.017453*rightArmController->elbowPitchServoState->position;
+		threadArgs->rightArmKinematics->directKinematics(q1R, q2R, q3R, q4R, &xR, &yR, &zR);
+		printf("- Right arm Cartesian position = {%.1lf, %.1lf, %.1lf} [cm]\n", 100*xR, 100*yR, 100*zR);		
+		
+		// Reset incremental variables
+		deltaYL = 0;
+		deltaYR = 0;
+		
+		// Obtain the incremental position joint variables
+		deltaXL = threadArgs->teleoperatedPosition[0]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+		if(fabs(threadArgs->teleoperatedPosition[5]) > THRESHOLD_3D_CONNEXION_ROTATION)
+			deltaYL = threadArgs->teleoperatedPosition[5]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_ROTATION_VALUE;
+		deltaZL = threadArgs->teleoperatedPosition[2]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+		
+		deltaXR = threadArgs->teleoperatedPosition[0]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+		if(fabs(threadArgs->teleoperatedPosition[5]) > THRESHOLD_3D_CONNEXION_ROTATION)
+			deltaYR = -threadArgs->teleoperatedPosition[5]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_ROTATION_VALUE;
+		deltaZR = threadArgs->teleoperatedPosition[2]*SPEED_OFFSET_3DCONNEXION*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+		
+		// printf("Delta_XYZ = {%.1f, %.1f, %.1f} [cm]\n", 100*deltaX, 100*deltaY, 100*deltaZ);
+		
+		// Apply temporarily the increment to the position reference. This operation will be undone in case of kinematic error.
+		xLref += deltaXL;
+		yLref += deltaYL;
+		zLref += deltaZL;
+		xRref += deltaXR;
+		yRref += deltaYR;
+		zRref += deltaZR;
+		
+		// Reset the error flags
+		errorKinematicsLeftArm = 0;
+		errorKinematicsRightArm = 0;
+		leftArmPositionOutOfBounds = false;
+		rightArmPositionOutOfBounds = false;
+		
+		// Check if the new position is within the arms limits
+		// Sphere of operation check
+		if(sqrt(xLref*xLref + yLref*yLref + zLref*zLref) > 0.9*(L1 + L2))
+			leftArmPositionOutOfBounds = true;
+		if(sqrt(xRref*xRref + yRref*yRref + zRref*zRref) > 0.9*(L1 + L2))
+			rightArmPositionOutOfBounds = true;
+		// X-axis check
+		if(xLref < 0)
+			leftArmPositionOutOfBounds = true;
+		if(xRref < 0)
+			rightArmPositionOutOfBounds = true;
+		
+		// Solve the inverse kinematics if the reference position is within the operation limits
+		if(leftArmPositionOutOfBounds == false)
+			errorKinematicsLeftArm = threadArgs->leftArmKinematics->IKSolver_Q1Approx(&q1L, &q2L, &q3L, &q4L, xLref, yLref, zLref, 0*PI/180, q1L);
+		if(rightArmPositionOutOfBounds == false)
+			errorKinematicsRightArm = threadArgs->rightArmKinematics->IKSolver_Q1Approx(&q1R, &q2R, &q3R, &q4R, xRref, yRref, zRref, -0*PI/180, q1R);
+		
+		// Set the play time
+		playTime = 2*TELEOPERATION_CONTROL_PERIOD;
+
+		// Apply the motion commands if there is no error. Otherwise undo the increment.
+		if(errorKinematicsLeftArm != 0 || leftArmPositionOutOfBounds == true || errorKinematicsRightArm != 0 || rightArmPositionOutOfBounds == true)
+		{
+			xLref -= deltaXL;
+			yLref -= deltaYL;
+			zLref -= deltaZL;
+			xRref -= deltaXR;
+			yRref -= deltaYR;
+			zRref -= deltaZR;
+		}
+		else
+		{
+			leftArmController->updateEndEffectorRefPosition(xLref, yLref, zLref);
+			leftArmController->moveJoint(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, 57.296*q1L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			leftArmController->moveJoint(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 57.296*q2L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			leftArmController->moveJoint(LEFT_ARM_SHOULDER_YAW_SERVO_ID, 57.296*q3L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			leftArmController->moveJoint(LEFT_ARM_ELBOW_PITCH_SERVO_ID, 57.296*q4L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			
+			rightArmController->updateEndEffectorRefPosition(xRref, yRref, zRref);
+			rightArmController->moveJoint(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, 57.296*q1R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+			rightArmController->moveJoint(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, 57.296*q2R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+			rightArmController->moveJoint(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, 57.296*q3R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+			rightArmController->moveJoint(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, 57.296*q4R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+		}
+		
+		// Open/close left/right gripper using the 3DConnexion buttons
+		if(threadArgs->leftButton3DConnexion == 1 && leftButton3DConnexion_before == 0)
+			operateGrippers(GRIPPER_CMD_SWITCH, GRIPPER_CMD_NOP);
+		leftButton3DConnexion_before = threadArgs->leftButton3DConnexion;
+		if(threadArgs->rightButton3DConnexion == 1 && rightButton3DConnexion_before == 0)
+			operateGrippers(GRIPPER_CMD_NOP, GRIPPER_CMD_SWITCH);
+		rightButton3DConnexion_before = threadArgs->rightButton3DConnexion;
+		
+		// Close the left/right gripper using the contact sensors
+		if(threadArgs->armState.leftGripperContact == 1)
+			operateGrippers(GRIPPER_CMD_CLOSE, GRIPPER_CMD_NOP);
+		if(threadArgs->armState.rightGripperContact == 1)
+			operateGrippers(GRIPPER_CMD_NOP, GRIPPER_CMD_CLOSE);
+		
+		
+		// Get time stamp at the end of the control loop
+		gettimeofday(&tend, NULL);
+		t = (tend.tv_sec - tini.tv_sec) + 1e-6*(tend.tv_usec - tini.tv_usec);
+		
+		// Wait time
+		if(t > TELEOPERATION_CONTROL_PERIOD)
+			cout << "WARNING: [in teleoperation3DConnexion]: control period exceeded." << endl;
+		else
+			usleep((useconds_t)(1e6*(TELEOPERATION_CONTROL_PERIOD - t)));
+	}
+}
+
+
+
+/*
+ * Teleoperation with 3DConnexon mouse
+ */
+void TaskManager::teleoperation3DConnexion_Demo()
+{
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	extern struct timeval t0;
+	struct timeval t1;
+	struct timeval tini;
+	struct timeval tend;
+	double t = 0;
+	float playTime = 1;
+	useconds_t sleepTime = 1000000;
+	int iterationCounter = 0;
+
+	// Reference Cartesian position
+	double xLref = 0;
+	double yLref = 0;
+	double zLref = 0;
+	double xRref = 0;
+	double yRref = 0;
+	double zRref = 0;
+	// Feedback Cartesian position
+	double xL = 0;
+	double yL = 0;
+	double zL = 0;
+	double xR = 0;
+	double yR = 0;
+	double zR = 0;
+	// Feedback joints position
+	double q1L = 0;
+	double q2L = 0;
+	double q3L = 0;
+	double q4L = 0;
+	double q1R = 0;
+	double q2R = 0;
+	double q3R = 0;
+	double q4R = 0;
+	// Incremental variables
+	float deltaXL = 0;
+	float deltaZL = 0;
+	float deltaXR = 0;
+	float deltaZR = 0;
+	int kinematicError = 0;
+	
+	// Grasping variables
+	uint8_t leftButton3DConnexion_before = 0;
+	uint8_t rightButton3DConnexion_before = 0;
+	int errorKinematicsLeftArm = 0;
+	int errorKinematicsRightArm = 0;
+	
+	
+
+	cout << "Teleoperation with 3DConnexion mouse - Demo version" << endl;
+	
+	
+	// Initializes the reference position
+	q1L = 0.017453*leftArmController->shoulderPitchServoState->position;
+	q2L = 0.017453*leftArmController->shoulderRollServoState->position;
+	q3L = 0.017453*leftArmController->shoulderYawServoState->position;
+	q4L = 0.017453*leftArmController->elbowPitchServoState->position;
+	threadArgs->leftArmKinematics->directKinematics(q1L, q2L, q3L, q4L, &xL, &yL, &zL);
+	xLref = xL;
+	yLref = yL;
+	zLref = zL;
+	q1R = 0.017453*rightArmController->shoulderPitchServoState->position;
+	q2R = 0.017453*rightArmController->shoulderRollServoState->position;
+	q3R = 0.017453*rightArmController->shoulderYawServoState->position;
+	q4R = 0.017453*rightArmController->elbowPitchServoState->position;
+	threadArgs->rightArmKinematics->directKinematics(q1R, q2R, q3R, q4R, &xR, &yR, &zR);
+	xRref = xR;
+	yRref = yR;
+	zRref = zR;
+	
+	
+	// Teleoperation loop
+	while(threadArgs->endFlag == false && threadArgs->gcsCode == GCS_CODE_TELEOPERATION_DEMO)
+	{
+		// Get time stamp at the begining of the control loop
+		gettimeofday(&tini, NULL);
+	
+		// Obtain the Cartesian position of the left and right arms
+		q1L = 0.017453*leftArmController->shoulderPitchServoState->position;
+		q2L = 0.017453*leftArmController->shoulderRollServoState->position;
+		q3L = 0.017453*leftArmController->shoulderYawServoState->position;
+		q4L = 0.017453*leftArmController->elbowPitchServoState->position;
+		threadArgs->leftArmKinematics->directKinematics(q1L, q2L, q3L, q4L, &xL, &yL, &zL);
+		// printf("Left arm Cartesian position = {%.2lf, %.2lf, %.2lf} [cm]\n", 100*xL, 100*yL, 100*zL);
+		q1R = 0.017453*rightArmController->shoulderPitchServoState->position;
+		q2R = 0.017453*rightArmController->shoulderRollServoState->position;
+		q3R = 0.017453*rightArmController->shoulderYawServoState->position;
+		q4R = 0.017453*rightArmController->elbowPitchServoState->position;
+		threadArgs->rightArmKinematics->directKinematics(q1R, q2R, q3R, q4R, &xR, &yR, &zR);
+		// printf("Right arm Cartesian position = {%.1lf, %.1lf, %.1lf} [cm]\n", 100*xR, 100*yR, 100*zR);		
+		
+		// Obtain the incremental position joint variables for left and right arms
+		deltaXL = threadArgs->teleoperatedPosition[0]*SPEED_OFFSET_3DCONNEXION_DEMO*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+		deltaZL = threadArgs->teleoperatedPosition[2]*SPEED_OFFSET_3DCONNEXION_DEMO*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+		deltaXR = threadArgs->teleoperatedPosition[0]*SPEED_OFFSET_3DCONNEXION_DEMO*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+		deltaZR = threadArgs->teleoperatedPosition[2]*SPEED_OFFSET_3DCONNEXION_DEMO*TELEOPERATION_CONTROL_PERIOD/MAX_3DCONNEXION_OFFSET_VALUE;
+		
+		// Apply temporarily the increment to the position reference. This operation will be undone in case of kinematic error.
+		xLref += deltaXL;
+		zLref += deltaZL;
+		xRref += deltaXR;
+		zRref += deltaZR;
+		
+		// Reset the error flags
+		kinematicError = 0;
+		
+		// Check if the new position is within the arms limits
+		/*
+		// Sphere of operation check
+		if(sqrt(xLref*xLref + yLref*yLref + zLref*zLref) > 0.9*(L1 + L2))
+			kinematicError = 1;
+		if(sqrt(xRref*xRref + yRref*yRref + zRref*zRref) > 0.9*(L1 + L2))
+			kinematicError = 1;
+		// X-axis check
+		if(xLref < -0.1 || xLref > 0.4)
+			kinematicError = 1;
+		if(xRref < -0.1 || xRref > 0.4)
+			kinematicError = 1;
+		// Z-axis check
+		if(fabs(zLref) > -0.075 || fabs(zLref) < -0.45)
+			kinematicError = 1;
+		if(fabs(zRref) > -0.075 || fabs(zRref) < -0.45)
+			kinematicError = 1;
+		*/
+		
+		// Solve the inverse kinematics if the reference position is within the operation limits
+		if(kinematicError == 0)
+		{
+			kinematicError += threadArgs->leftArmKinematics->IKSolver_Q1Approx(&q1L, &q2L, &q3L, &q4L, xLref, yLref, zLref, 0*PI/180, q1L);
+			kinematicError += threadArgs->rightArmKinematics->IKSolver_Q1Approx(&q1R, &q2R, &q3R, &q4R, xRref, yRref, zRref, -0*PI/180, q1R);
+		}
+		
+		// Set the play time
+		playTime = 2*TELEOPERATION_CONTROL_PERIOD;
+
+		// Apply the motion commands if there is no error. Otherwise undo the increment.
+		if(kinematicError != 0)
+		{
+			xLref -= deltaXL;
+			zLref -= deltaZL;
+			xRref -= deltaXR;
+			zRref -= deltaZR;
+		}
+		else
+		{	
+			leftArmController->moveJoint(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, 57.296*q1L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			leftArmController->moveJoint(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, 57.296*q2L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			leftArmController->moveJoint(LEFT_ARM_SHOULDER_YAW_SERVO_ID, 57.296*q3L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			leftArmController->moveJoint(LEFT_ARM_ELBOW_PITCH_SERVO_ID, 57.296*q4L, playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);	
+			rightArmController->moveJoint(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, 57.296*q1R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+			rightArmController->moveJoint(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, 57.296*q2R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+			rightArmController->moveJoint(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, 57.296*q3R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+			rightArmController->moveJoint(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, 57.296*q4R, playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+		}
+		
+		// Open/close left/right gripper using the 3DConnexion buttons
+		if(threadArgs->leftButton3DConnexion == 1 && leftButton3DConnexion_before == 0)
+			operateGrippers(GRIPPER_CMD_SWITCH, GRIPPER_CMD_NOP);
+		leftButton3DConnexion_before = threadArgs->leftButton3DConnexion;
+		if(threadArgs->rightButton3DConnexion == 1 && rightButton3DConnexion_before == 0)
+			operateGrippers(GRIPPER_CMD_NOP, GRIPPER_CMD_SWITCH);
+		rightButton3DConnexion_before = threadArgs->rightButton3DConnexion;
+		
+		// Close the left/right gripper using the contact sensors
+		if(threadArgs->armState.leftGripperContact == 1)
+			operateGrippers(GRIPPER_CMD_CLOSE, GRIPPER_CMD_NOP);
+		if(threadArgs->armState.rightGripperContact == 1)
+			operateGrippers(GRIPPER_CMD_NOP, GRIPPER_CMD_CLOSE);
+		
+		
+		// Get time stamp at the end of the control loop
+		gettimeofday(&tend, NULL);
+		t = (tend.tv_sec - tini.tv_sec) + 1e-6*(tend.tv_usec - tini.tv_usec);
+		
+		// Wait time
+		if(t > TELEOPERATION_CONTROL_PERIOD)
+			cout << "WARNING: [in teleoperation3DConnexion]: control period exceeded." << endl;
+		else
+			usleep((useconds_t)(1e6*(TELEOPERATION_CONTROL_PERIOD - t)));
+	}
+}
+/*
+ * Update task status
+ */
+void TaskManager::updateTaskExecution()
+{
+	switch(threadArgs->gcsCode)
+	{
+		case GCS_CODE_NOP:
+			// No operation code. Wait 100 second
+			usleep(100000);
+			break;
+			
+		//////////////////////////// ARMS OPERATION CODES ////////////////////////////
+		case GCS_CODE_GO_TO_REST_POSITION:
+			this->goToRestPosition();
+			threadArgs->gcsCode = GCS_CODE_NOP;
+			break;
+			
+		case GCS_CODE_GO_TO_OPERATION_POSITION:
+			this->goToOperationPosition();
+			threadArgs->gcsCode = GCS_CODE_NOP;
+			break;
+		
+		case GCS_CODE_TELEOPERATION:
+			this->teleoperation3DConnexion();
+			break;
+		
+		case GCS_CODE_TELEOPERATION_DEMO:
+			this->teleoperation3DConnexion_Demo();
+			break;
+		
+		case GCS_CODE_TELEOPERATION_ARMS_GRASP:
+			this->teleoperationGraspWithArms();
+			break;
+		
+		//////////////////////////// GRIPPERS OPERATION CODES ////////////////////////////
+		case GCS_CODE_OPEN_LEFT_GRIPPER:
+			this->operateGrippers(GRIPPER_CMD_OPEN, GRIPPER_CMD_NOP);
+			threadArgs->gcsCode = GCS_CODE_NOP;
+			break;
+			
+		case GCS_CODE_CLOSE_LEFT_GRIPPER:
+			this->operateGrippers(GRIPPER_CMD_CLOSE, GRIPPER_CMD_NOP);
+			threadArgs->gcsCode = GCS_CODE_NOP;
+			break;
+			
+		case GCS_CODE_OPEN_RIGHT_GRIPPER:
+			this->operateGrippers(GRIPPER_CMD_NOP, GRIPPER_CMD_OPEN);
+			threadArgs->gcsCode = GCS_CODE_NOP;
+			break;
+			
+		case GCS_CODE_CLOSE_RIGHT_GRIPPER:
+			this->operateGrippers(GRIPPER_CMD_NOP, GRIPPER_CMD_CLOSE);
+			threadArgs->gcsCode = GCS_CODE_NOP;
+			break;
+			
+		case GCS_CODE_OPEN_BOTH_GRIPPERS:
+			this->operateGrippers(GRIPPER_CMD_OPEN, GRIPPER_CMD_OPEN);
+			threadArgs->gcsCode = GCS_CODE_NOP;
+			break;
+			
+		case GCS_CODE_CLOSE_BOTH_GRIPPERS:
+			this->operateGrippers(GRIPPER_CMD_CLOSE, GRIPPER_CMD_CLOSE);
+			threadArgs->gcsCode = GCS_CODE_NOP;
+			break;
+			
+		case GCS_CODE_REPRODUCE_OPERATION:
+			this->reproduceLearnedTrajectory();
+			threadArgs->gcsCode = GCS_CODE_NOP;
+			break;
+			
+		//////////////////////////// DEBUG OPERATION CODES ////////////////////////////
+			
+		case GCS_CODE_SERVOS_CALIBRATION:
+			this->dualArmServosCalibration();
+			break;
+			
+		case GCS_CODE_JOINTS_IDENTIFICATION:
+			this->dualArmJointsIdentification();
+			break;
+			
+		case GCS_CODE_DISABLE_TORQUE_CONTROL:
+			this->enableServosTorqueControl(0);
+			break;
+				
+		case GCS_CODE_ENABLE_TORQUE_CONTROL:
+			this->enableServosTorqueControl(1);
+			break;
+			
+		//////////////////////////// ARM IDENTIFICATION CODES ////////////////////////////
+		
+			
+			
+				
+		//////////////////////////// EXTERNAL CONTROL CODES ////////////////////////////
+		
+		case EXTERNAL_JOINT_CONTROL_REF:
+			this->externalJointReferenceControl();
+			break;
+		
+		default:
+			cout << "WARNING: unrecognized GCS code." << endl;
+			usleep(100000);
+			break;
+	}
+}
+	
+
+/*
+ * Enable/Disables servos torque
+ */
+void TaskManager::enableServosTorqueControl(int servosTorqueEnable)
+{
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	uint8_t controlMode = 0;
+	
+	
+	if(servosTorqueEnable == 1)
+	{
+		controlMode = 1;
+		cout << "Torque control enable request" << endl;
+	}
+	else
+	{
+		controlMode = 0;
+		cout << "Torque control disable request" << endl;
+	}
+		
+	
+	leftArmController->servoTorqueControl(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, controlMode, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	leftArmController->servoTorqueControl(LEFT_ARM_SHOULDER_ROLL_SERVO_ID, controlMode, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	leftArmController->servoTorqueControl(LEFT_ARM_SHOULDER_YAW_SERVO_ID, controlMode, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	leftArmController->servoTorqueControl(LEFT_ARM_ELBOW_PITCH_SERVO_ID, controlMode, threadArgs->usbDeviceLeftArm);
+	usleep(10000);
+	
+	rightArmController->servoTorqueControl(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, controlMode, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	rightArmController->servoTorqueControl(RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, controlMode, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	rightArmController->servoTorqueControl(RIGHT_ARM_SHOULDER_YAW_SERVO_ID, controlMode, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	rightArmController->servoTorqueControl(RIGHT_ARM_ELBOW_PITCH_SERVO_ID, controlMode, threadArgs->usbDeviceRightArm);
+	usleep(10000);
+	
+	threadArgs->gcsCode = 0;
+}
+
+
+	
+/*
+ * Return -1, 0, 1 depending on the value
+ */
+int TaskManager::signDouble(double value)
+{
+	int signValue = 1;
+	
+	if(value == 0)
+		signValue = 0;
+	if(value < 0)
+		signValue = -1;
+	
+	return signValue;
+}
+
+

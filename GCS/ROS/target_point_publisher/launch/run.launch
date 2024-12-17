@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+
+<launch>
+  <arg name="project" default="target_point_publisher" />
+  
+  <arg name="map_file" default="$(find target_point_publisher)/map/output.yaml"/>
+  
+  <node pkg="map_server" type="map_server" name="map_server" args="$(arg map_file)" >
+  	<remap from="/map" to="/path_generator/map" /> 		
+  </node>
+   
+  <node pkg="$(arg project)" type="$(arg project)_node" name="$(arg project)_node" output="screen" respawn="true" />
+    
+  <node pkg="pcd_map_viewer" type="pcd_map_viewer" name="pcd_map_viewer" output="screen"/>
+  
+  <node pkg="target_point_publisher" type="aruco_guidance_node" name="aruco_guidance_node" output="screen"/>
+  
+  <node pkg="target_point_publisher" type="path_generator_node" name="path_generator_node" output="screen"/>
+  
+  <node pkg="target_point_publisher" type="ADROM2ROScommunication_node" name="ADROM2ROScommunication_node" output="screen"/>
+  
+  <node pkg="rviz" type="rviz" name="rviz_$(arg project)" args="-d $(find target_point_publisher)/launch/Map.rviz" />
+  
+</launch>

@@ -1,0 +1,410 @@
+/*
+ * Copyright (c) 2017 Alejandro Suarez Fernandez-Miranda
+ *
+ * This source code is part of the PhD thesis "Dexterous Aerial Manipulation"
+ * and part of the AEROARMS project.
+ *
+ * University of Seville - Robotics, Vision and Control Group
+ *
+ * The distribution of this source code is not allowed without the consent of the author
+ *
+ * File name: Main.cpp
+ */
+
+
+// Standard library
+#include <iostream>
+#include <termios.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <sys/time.h>
+
+
+// Specific library
+#include "../Constants/Constants.h"
+#include "../Structures/Structures.h"
+#include "../Threads/ThreadsControl.h"
+#include "../Threads/ThreadsSTM32Board.h"
+#include "../Threads/ThreadsArmsState.h"
+#include "../Threads/ThreadsInterface.h"
+#include "../Kinematics/Kinematics.h"
+#include "../TaskManager/TaskManager.h"
+#include "../ArmController/ArmController.h"
+
+
+// Function declaration
+int configureSerialInterface(int usbDevice, speed_t speed);
+
+
+// Constant definition
+
+
+// Global variables
+struct timeval t0;
+
+
+// Namespaces
+using namespace std;
+
+
+int main(int argc, char ** argv)
+{
+	TaskManager * taskManager = NULL;
+	ArmController * leftArmController = new ArmController(LEFT_ARM_ID);
+	ArmController * rightArmController = new ArmController(RIGHT_ARM_ID);
+	Kinematics * leftArmKinematics = new Kinematics(LEFT_ARM_ID, LEFT_ARM_X_AXIS_OFFSET, LEFT_ARM_Y_AXIS_OFFSET, LEFT_ARM_Z_AXIS_OFFSET);
+	Kinematics * rightArmKinematics = new Kinematics(RIGHT_ARM_ID, RIGHT_ARM_X_AXIS_OFFSET, RIGHT_ARM_Y_AXIS_OFFSET, RIGHT_ARM_Z_AXIS_OFFSET);
+	THREAD_ARGS threadArgs;
+	int usbDeviceLeftArm = -1;
+	int usbDeviceRightArm = -1;
+	int usbDeviceSTM32Board = -1;
+	pthread_t leftArmServosDataThread;
+	pthread_t rightArmServosDataThread;
+	pthread_t stm32BoardDataThread;
+	pthread_t visionThread;
+	pthread_t visionDeflectionThread;
+	pthread_t referencesThread;
+	pthread_t publisherThread;
+	pthread_t gcsThread;
+	pthread_t dataLogThread;
+	pthread_t teleopThread;
+	int error = 0;
+	
+	
+	cout << endl;
+	cout << "AlexAndros_6: Anthropomorphic Compliant Dual Arm" << endl;
+	cout << "Author: Alejandro Suarez Fernandez-Miranda" << endl;
+	cout << "Date: 20 November 2016" << endl;
+	cout << "Project: Dexterous Aerial Manipulation, PhD Thesis" << endl;
+	cout << "Organization: GRVC - University of Seville" << endl;
+	cout << "--------------------------------------------------" << endl;
+	cout << endl;
+	
+	
+	if(argc != 4)
+	{
+		error = 1;
+		cout << "ERROR: invalid number of arguments" << endl;
+		cout << "Ussage: " << argv[0] << " ttyUSB_LeftArm ttyUSB_RightArm ttyUSB_STM32Board" << endl;
+		cout << "USB device name should be like /dev/ttyUSB0" << endl << endl;;
+	}
+	else
+	{
+	    //////////////////////////////////// USART's INITIALIZATION ////////////////////////////////////
+	    
+		// Open the USB-to-USART device associated to the left/right arms (if enabled)
+		if(ARMS_CONTROL_ENABLED == 1 || ARMS_FEEDBACK_ENABLED == 1)
+		{
+			usbDeviceLeftArm = open(argv[1], O_RDWR | O_NOCTTY | O_SYNC);
+			if(usbDeviceLeftArm <= 0)
+			{
+				error = 1;
+				cout << "ERROR: [in main] could no open USB-to-UART device associated to left arm. Try running with sudo." << endl;
+			}
+			else
+				configureSerialInterface(usbDeviceLeftArm, B115200);
+				
+			// Open the USB-to-USART device associated to the right arm
+			usbDeviceRightArm = open(argv[2], O_RDWR | O_NOCTTY | O_SYNC);
+			if(usbDeviceRightArm <= 0)
+			{
+				error = 1;
+				cout << "ERROR: [in main] could no open USB-to-UART device associated to right arm. Try running with sudo." << endl;
+			}
+			else
+				configureSerialInterface(usbDeviceRightArm, B115200);
+		}
+		
+		// Open the micro-controller board serial interface (if enabled)
+		if(STM32BOARD_AVAILABLE == 1 && error == 0)
+		{
+			// usbDeviceSTM32Board = open(argv[3], O_RDWR | O_NOCTTY | O_SYNC);
+			cout << "Configuring micro controller board" << endl;
+			usbDeviceSTM32Board = open(argv[3], O_RDWR | O_NOCTTY);
+			if(usbDeviceSTM32Board <= 0)
+			{
+				error = 1;
+				cout << "ERROR: [in main] could no open USB-to-UART device for the STM32 board. Try running with sudo." << endl;
+			}
+			else
+				configureSerialInterface(usbDeviceSTM32Board, B115200);
+		}
+	}
+	
+	
+	
+	if(error == 0)
+	{
+	    //////////////////////////////////// VARIABLES INITIALIZATION ////////////////////////////////////
+	    
+		// Initialize arm servos
+		error += leftArmController->init(LEFT_ARM_SHOULDER_PITCH_SERVO_ID, LEFT_ARM_SHOULDER_ROLL_SERVO_ID, LEFT_ARM_SHOULDER_YAW_SERVO_ID, LEFT_ARM_ELBOW_PITCH_SERVO_ID, usbDeviceLeftArm);
+		error += rightArmController->init(RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, RIGHT_ARM_SHOULDER_YAW_SERVO_ID, RIGHT_ARM_ELBOW_PITCH_SERVO_ID, usbDeviceRightArm);
+
+		// Initialize maximum/minimum joint limits, offsets and sign corrections	
+		leftArmController->setMaximumJointLimits(LEFT_ARM_SHOULDER_PITCH_MAX, LEFT_ARM_SHOULDER_ROLL_MAX, LEFT_ARM_SHOULDER_YAW_MAX, LEFT_ARM_ELBOW_PITCH_MAX);
+		leftArmController->setMinimumJointLimits(LEFT_ARM_SHOULDER_PITCH_MIN, LEFT_ARM_SHOULDER_ROLL_MIN, LEFT_ARM_SHOULDER_YAW_MIN, LEFT_ARM_ELBOW_PITCH_MIN);
+		leftArmController->setServoCorrections(LEFT_ARM_SHOULDER_PITCH_SIGN, LEFT_ARM_SHOULDER_ROLL_SIGN, LEFT_ARM_SHOULDER_YAW_SIGN, LEFT_ARM_ELBOW_PITCH_SIGN, LEFT_ARM_SHOULDER_PITCH_OFFSET, LEFT_ARM_SHOULDER_ROLL_OFFSET, LEFT_ARM_SHOULDER_YAW_OFFSET, LEFT_ARM_ELBOW_PITCH_OFFSET);
+		
+		rightArmController->setMaximumJointLimits(RIGHT_ARM_SHOULDER_PITCH_MAX, RIGHT_ARM_SHOULDER_ROLL_MAX, RIGHT_ARM_SHOULDER_YAW_MAX, RIGHT_ARM_ELBOW_PITCH_MAX);
+		rightArmController->setMinimumJointLimits(RIGHT_ARM_SHOULDER_PITCH_MIN, RIGHT_ARM_SHOULDER_ROLL_MIN, RIGHT_ARM_SHOULDER_YAW_MIN, RIGHT_ARM_ELBOW_PITCH_MIN);
+		rightArmController->setServoCorrections(RIGHT_ARM_SHOULDER_PITCH_SIGN, RIGHT_ARM_SHOULDER_ROLL_SIGN, RIGHT_ARM_SHOULDER_YAW_SIGN, RIGHT_ARM_ELBOW_PITCH_SIGN, RIGHT_ARM_SHOULDER_PITCH_OFFSET, RIGHT_ARM_SHOULDER_ROLL_OFFSET, RIGHT_ARM_SHOULDER_YAW_OFFSET, RIGHT_ARM_ELBOW_PITCH_OFFSET);
+	
+	
+		// Set the fields of the threads arguments structure
+	    threadArgs.usbDeviceLeftArm = usbDeviceLeftArm;
+	    threadArgs.usbDeviceRightArm = usbDeviceRightArm;
+	    threadArgs.usbDeviceSTM32Board = usbDeviceSTM32Board;
+	    threadArgs.leftArmController = leftArmController;
+	    threadArgs.rightArmController = rightArmController;
+	    threadArgs.leftArmKinematics = leftArmKinematics;
+	    threadArgs.rightArmKinematics = rightArmKinematics;
+	    threadArgs.visionSensorDataReceivedFlag = 0;
+	    threadArgs.visionDeflectionDataReceivedFlag = 0;
+	    // threadArgs.udpListeningPort = atoi(argv[4]);
+	    threadArgs.udpListeningPort = GCS_UDP_PORT;
+	    // threadArgs.teleopUDPListeningPort = atoi(argv[5]);
+	    threadArgs.teleopUDPListeningPort = TELEOPERATION_UDP_PORT;
+	    threadArgs.gcsCode = 0;
+	    threadArgs.gcsCodeReceivedFlag = false;
+	    threadArgs.armState.leftGripperContact = 0;
+	    threadArgs.armState.rightGripperContact = 0;
+	    for(int k = 0; k < 3; k++)
+	    {
+	    	threadArgs.teleoperatedPosition[k] = 0;
+	    	threadArgs.teleoperatedOrientation[k] = 0;
+	    }
+	    threadArgs.leftButton3DConnexion = 0;
+	    threadArgs.rightButton3DConnexion = 0;
+	    threadArgs.endFlag = false;
+	    
+	    
+	    // Create the task manager
+	    taskManager = new TaskManager(&threadArgs);
+	    
+	    // Get initial time stamp (global variable, visible by all the threads)
+	    gettimeofday(&t0, NULL);
+	    
+	    
+	    
+	    
+	    //////////////////////////////////// THREAD CREATION ////////////////////////////////////
+	    
+		// Create the thread for receiving measurements from the servos of the left/right arms (if enabled)
+	    if(ARMS_FEEDBACK_ENABLED == 1)
+	    {
+			if(pthread_create(&leftArmServosDataThread, NULL, &leftArmServosDataThreadFunction, (void*)&threadArgs))
+			{
+				cout << "ERROR: [in main] could not create left arm servos data thread." << endl;
+				error = 1;
+			}
+			else
+				usleep(100000);
+		    
+			if(pthread_create(&rightArmServosDataThread, NULL, &rightArmServosDataThreadFunction, (void*)&threadArgs))
+			{
+				cout << "ERROR: [in main] could not create right arm servos data thread." << endl;
+				error = 1;
+			}
+			else
+				usleep(100000);
+		}
+		
+		// Create the thread for receiving control references from serial port (if enabled)
+		if(STM32BOARD_AVAILABLE == 1)
+		{
+			if(pthread_create(&stm32BoardDataThread, NULL, &STM32BoardThreadFunction, (void*)&threadArgs))
+			{
+				cout << "ERROR: [in main] could not create STM32 board data thread." << endl;
+				error = 1;
+			}
+			else
+				usleep(100000);
+		}
+		
+		/*
+		// Create the vision thread for receiving the grasping points
+		if(pthread_create(&visionThread, NULL, &visionThreadFunction, (void*)&threadArgs))
+		{
+			cout << "ERROR: [in main] could not create vision thread." << endl;
+			error = 1;
+		}
+		else
+			usleep(100000);
+		
+		// Create the vision deflection thread for receiving the grasping points
+		if(pthread_create(&visionDeflectionThread, NULL, &visionDeflectionThreadFunction, (void*)&threadArgs))
+		{
+			cout << "ERROR: [in main] could not create vision deflection thread." << endl;
+			error = 1;
+		}
+		else
+			usleep(100000);
+		*/
+			
+		// Create the thread for receiving commands and the Keep Alive message from the GCS
+		if(pthread_create(&gcsThread, NULL, &gcsThreadFunction, (void*)&threadArgs))
+		{
+			cout << "ERROR: [in main] could not create GCS interface thread" << endl;
+			error = 1;
+		}
+		else
+			usleep(100000);
+			
+		// Create the thread for teleoperation
+		if(pthread_create(&teleopThread, NULL, &teleoperationThreadFunction, (void*)&threadArgs))
+		{
+			cout << "ERROR: [in main] could not create teleoperation interface thread" << endl;
+			error = 1;
+		}
+		else
+			usleep(100000);
+			
+		// Create the data log thread
+		if(pthread_create(&dataLogThread, NULL, &dataLogThreadFunction, (void*)&threadArgs))
+		{
+			cout << "ERROR: [in main] could not create data log thread" << endl;
+			error = 1;
+		}
+		else
+			usleep(100000);
+			
+		// Create the thread for receiving the control references
+		if(pthread_create(&referencesThread, NULL, &armsControlReferencesThreadFunction, (void*)&threadArgs))
+		{
+			cout << "ERROR: [in main] could not create control references thread" << endl;
+			error = 1;
+		}
+		else
+			usleep(100000);
+			
+		/*
+		// Create the thread for publishing the arm state
+		if(pthread_create(&publisherThread, NULL, &armsStatePublisherThreadFunction, (void*)&threadArgs))
+		{
+			cout << "ERROR: [in main] could not create arms state publisher thread" << endl;
+			error = 1;
+		}
+		else
+			usleep(100000);
+		*/
+		
+		
+		/////////////////////////// MAIN CONTROL/TASK LOOP ///////////////////////////
+		
+		// taskManager->goToOperationPosition();
+		// usleep(2500000);
+		
+		while(threadArgs.endFlag != true)
+		{
+			// Check if the termination code was sent from the GCS
+			if(threadArgs.gcsCode < 0)
+			{
+				threadArgs.endFlag = true;
+				cout << "Termiation request sent by the GCS." << endl;
+			}
+			else
+			{
+				// Update task execution
+				if(threadArgs.gcsCodeReceivedFlag == true)
+				{
+					taskManager->updateTaskExecution();
+					// threadArgs.gcsCodeReceivedFlag = false;
+				}
+			}
+			
+			// Sleep 10 ms
+			usleep(10000);
+		}
+		
+		//////////////////////////////////////////////////////////////////////////////
+		
+		
+		// Wait for threads termination
+		threadArgs.endFlag = true;
+		cout << "Waiting for threads termination..." << endl;
+		usleep(250000);
+		
+		// Close USB-to-UART devices
+		close(usbDeviceLeftArm);
+		close(usbDeviceRightArm);
+		close(usbDeviceSTM32Board);
+		usbDeviceLeftArm = -1;
+		usbDeviceRightArm = -1;
+		usbDeviceSTM32Board = -1;
+	}
+	
+	
+	return error;
+}
+
+
+/*
+ * Configure the properties of serial port interface
+ */
+int configureSerialInterface(int usbDevice, speed_t speed)
+{
+	struct termios tty;
+	int error = 0;
+	
+	
+	// Try to open USB device
+	if(usbDevice < 0)
+	{
+		error = 1;
+		cout << "ERROR: [in main::configureSerialInterface] could not open USB device. Try executing with sudo." << endl;
+	}
+	else
+	{
+		memset(&tty, 0, sizeof(struct termios));
+		if(tcgetattr(usbDevice, &tty) != 0)
+		{
+			error = 1;
+			cout << "ERROR: [in main::configureSerialInterface] could not get attributes from USB device" << endl;
+		}
+		else
+		{
+			// Set baudrate
+			cfsetospeed (&tty, speed);
+			cfsetispeed (&tty, speed);
+			
+			// Set other attirbutes
+			tty.c_cc[VMIN] = 0;		// read doesn't block
+			tty.c_cc[VTIME] = 5;	// 0.5 seconds read timeout
+			
+			tty.c_cflag &=  ~PARENB;	// Make 8n1
+			tty.c_cflag &=  ~CSTOPB;
+			tty.c_cflag &=  ~CSIZE;
+			tty.c_cflag |=  CS8;
+			tty.c_cflag &=  ~CRTSCTS;	// no flow control
+			tty.c_lflag = 0;			// no signaling chars, no echo, no canonical processing
+			tty.c_oflag = 0; 			// no remapping, no delays
+			tty.c_cflag |=  CREAD | CLOCAL;			// turn on READ & ignore ctrl lines
+			tty.c_iflag &= ~(IXON | IXOFF | IXANY);	// turn off s/w flow ctrl
+			tty.c_cflag |=  CREAD | CLOCAL;	// turn on READ & ignore ctrl lines
+			tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);	// make raw
+			tty.c_oflag &= ~OPOST;		// make raw
+	
+			// Ensures that special characters are not interpreted (CR character)
+			cfmakeraw(&tty);
+	
+			// Flush port and apply attributes
+			tcflush(usbDevice, TCIFLUSH);
+			if(tcsetattr(usbDevice, TCSANOW, &tty) != 0)
+			{
+				error = 1;
+				cout << "ERROR: [in configureSerialInterface] could not apply attributes on USB device" << endl;
+			}
+		}
+	}
+	
+	
+	return error;
+}
+
+
+
+

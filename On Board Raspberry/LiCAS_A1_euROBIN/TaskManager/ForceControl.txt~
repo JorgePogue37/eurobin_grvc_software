@@ -1,0 +1,276 @@
+
+
+
+/*
+ * Vision deflection control
+ */
+void TaskManager::visionDeflectionControl()
+{
+	ArmController * leftArmController = threadArgs->leftArmController;
+	ArmController * rightArmController = threadArgs->rightArmController;
+	double adcDataOffset[NUM_COMPLIANT_JOINTS];
+	double adcData[NUM_COMPLIANT_JOINTS];
+	unsigned int k = 0;
+	unsigned int i = 0;
+	const int leftArmServosID[NUM_ARM_SERVOS] = {LEFT_ARM_SHOULDER_PITCH_SERVO_ID, LEFT_ARM_SHOULDER_ROLL_SERVO_ID, LEFT_ARM_SHOULDER_YAW_SERVO_ID, LEFT_ARM_ELBOW_PITCH_SERVO_ID};
+	const int rightArmServosID[NUM_ARM_SERVOS] = {RIGHT_ARM_SHOULDER_PITCH_SERVO_ID, RIGHT_ARM_SHOULDER_ROLL_SERVO_ID, RIGHT_ARM_SHOULDER_YAW_SERVO_ID, RIGHT_ARM_ELBOW_PITCH_SERVO_ID};
+	// Control constants
+	double Kp = 0;
+	double Kd = 0;
+	double Ki = 0;
+	const double voltageDeflectionConstant = 100;
+	const double maximumJointIncrement = 10;
+	// Control signals
+	double playTime = 0;
+	int state = 1;				// 1: calibrating; 2: controlling
+	int calibrationCounter = 0;
+	double velocity = 0.1;		// 10 [cm/s]
+	double normDeflection = 0;
+	double deflectionReference[3] = {-0.01, 0, 0};
+	double deflectionError[3] = {0, 0, 0};
+	// Feedback signals
+	double xyzTCPPositionLeft[3] = {0, 0, 0};
+	double xyzMarkerPositionLeft[3] = {0, 0, 0};
+	double xyzTCPPositionRefLeft[3] = {0, 0, 0};
+	double xyzMarkerPositionRefLeft[3] = {0, 0, 0};
+	double cartesianDeflectionLeft[3] = {0, 0, 0};
+	double cartesianDeflectionErrorOffsetLeft[3] = {0, 0, 0};
+	double xyzTCPPositionRight[3] = {0, 0, 0};
+	double xyzMarkerPositionRight[3] = {0, 0, 0};
+	double cartesianDeflectionRight[3] = {0, 0, 0};
+	double cartesianDeflectionErrorOffsetRight[3] = {0, 0, 0};
+	double xyzMarkerPositionRefRight[3] = {0, 0, 0};
+	double maxLimit[3] = {0.45, 0.125, -0.05};
+	double minLimit[3] = {0.15, -0.25, -0.45};
+	double value = 0;
+	
+	double qL[NUM_ARM_JOINTS];
+	double qLref[NUM_ARM_JOINTS];
+	double delta_qL[NUM_ARM_JOINTS];
+	double delta_qL_Integral[NUM_ARM_JOINTS];
+	double jointIncrement_L[NUM_ARM_JOINTS];
+	double qLref_MaxLimit[NUM_ARM_JOINTS] = {90, 90, 90, -10};
+	double qLref_MinLimit[NUM_ARM_JOINTS] = {-90, -10, -90, -120};
+	bool enableDeflectionControl_L[NUM_ARM_JOINTS] = {true, true, true, true};
+	int signCorrectionLeft[NUM_ARM_JOINTS] = {1, -1, 1, 1};
+	double qR[NUM_ARM_JOINTS];
+	double qRref[NUM_ARM_JOINTS];
+	double delta_qR[NUM_ARM_JOINTS];
+	double delta_qR_Integral[NUM_ARM_JOINTS];
+	double jointIncrement_R[NUM_ARM_JOINTS];
+	double qRref_MaxLimit[NUM_ARM_JOINTS] = {90, 90, 90, -10};
+	double qRref_MinLimit[NUM_ARM_JOINTS] = {-90, -10, -90, -120};
+	bool enableDeflectionControl_R[NUM_ARM_JOINTS] = {true, true, true, true};
+	int signCorrectionRight[NUM_ARM_JOINTS] = {-1, -1, 1, -1};
+	double xL = 0;
+	double yL = 0;
+	double zL = 0;
+	double xR = 0;
+	double yR = 0;
+	double zR = 0;
+	bool initialized = false;
+	// Timing variables
+	struct timeval tini;
+	struct timeval tend;
+	extern struct timeval t0;
+	struct timeval t1;
+	double titeration = 0;
+	double t = 0;
+	int iterationIndex = 0;
+	int jointIndex = 0;
+	// Data log file
+	ofstream dataFile;
+	time_t currentTime = time(NULL);
+	struct tm tm = *localtime(&currentTime);
+	char fileName[256];
+	// Error report variables
+	int error = 0;
+	
+	
+	// Open output data file
+	sprintf(fileName, "Log_%d-%d-%d_%dh%dm%ds_VisionDeflectionControl.txt", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	dataFile.open(fileName);
+	
+	cout << "Calibrating deflection potentiometers...";
+	for(i = 0; i < NUM_COMPLIANT_JOINTS; i++)
+		adcDataOffset[i] = 0;
+	for(unsigned int k = 0; k < 20; k++)
+	{
+		for(unsigned int i = 0; i < NUM_COMPLIANT_JOINTS; i++)
+			adcDataOffset[i] += threadArgs->adcChannelsSTM32Board[i]/20;
+		// Sleep 100
+		usleep(100000);
+	}
+	cout << "Done" << endl;
+	
+	
+	cout << "Calibrating vision deflection...";
+	
+	while(threadArgs->endFlag == false && threadArgs->gcsCode == GCS_CODE_VISION_DEFLECTION)
+	{
+		// Get time stamp at the begining of the control loop
+		gettimeofday(&tini, NULL);
+		
+		/////////////////////////// DEFLECTION CONTROLLER INI ///////////////////////////
+		
+		// Compute joint deflection in degrees, removing the deflection offset
+		for(i = 0; i < NUM_COMPLIANT_JOINTS; i++)
+			adcData[i] = threadArgs->adcChannelsSTM32Board[i];
+		delta_qL[0] = voltageDeflectionConstant*signCorrectionLeft[0]*(adcData[7] - adcDataOffset[7]);
+		delta_qL[1] = voltageDeflectionConstant*signCorrectionLeft[1]*(adcData[0] - adcDataOffset[0]);
+		delta_qL[2] = voltageDeflectionConstant*signCorrectionLeft[2]*(adcData[1] - adcDataOffset[1]);
+		delta_qL[3] = voltageDeflectionConstant*signCorrectionLeft[3]*(adcData[2] - adcDataOffset[2]);
+		delta_qR[0] = voltageDeflectionConstant*signCorrectionRight[0]*(adcData[3] - adcDataOffset[3]);
+		delta_qR[1] = voltageDeflectionConstant*signCorrectionRight[1]*(adcData[4] - adcDataOffset[4]);
+		delta_qR[2] = voltageDeflectionConstant*signCorrectionRight[2]*(adcData[5] - adcDataOffset[5]);
+		delta_qR[3] = voltageDeflectionConstant*signCorrectionRight[3]*(adcData[6] - adcDataOffset[6]);
+		
+		// Obtain the Cartesian position of the left and right TCP and markers (equivalent stiff-joint manipulator)
+		qL[0] = 0.017453*leftArmController->shoulderPitchServoState->position;
+		qL[1] = 0.017453*leftArmController->shoulderRollServoState->position;
+		qL[2] = 0.017453*leftArmController->shoulderYawServoState->position;
+		qL[3] = 0.017453*leftArmController->elbowPitchServoState->position;
+		threadArgs->leftArmKinematics->directKinematics_Marker(qL[0], qL[1], qL[2], qL[3], xyzMarkerPositionLeft);
+		threadArgs->leftArmKinematics->directKinematics(qL[0], qL[1], qL[2], qL[3], &xyzTCPPositionLeft[0], &xyzTCPPositionLeft[1], &xyzTCPPositionLeft[2]);
+		qR[0] = 0.017453*rightArmController->shoulderPitchServoState->position;
+		qR[1] = 0.017453*rightArmController->shoulderRollServoState->position;
+		qR[2] = 0.017453*rightArmController->shoulderYawServoState->position;
+		qR[3] = 0.017453*rightArmController->elbowPitchServoState->position;
+		threadArgs->rightArmKinematics->directKinematics_Marker(qR[0], qR[1], qR[2], qR[3], xyzMarkerPositionRight);
+		threadArgs->rightArmKinematics->directKinematics(qR[0], qR[1], qR[2], qR[3], &xyzTCPPositionRight[0], &xyzTCPPositionRight[1], &xyzTCPPositionRight[2]);
+		
+		// Compute the Cartesian deflection
+		for(i = 0; i < 3; i++)
+		{
+			cartesianDeflectionLeft[i] = threadArgs->visionDeflection.leftMarkerPosition[i] - xyzMarkerPositionLeft[i];
+			cartesianDeflectionRight[i] = threadArgs->visionDeflection.rightMarkerPosition[i] - xyzMarkerPositionRight[i];
+		}
+		
+		
+		switch(state)
+		{
+			case 1:		///////////////////////////// CALIBRATING /////////////////////////////
+			
+				for(i = 0; i < 3; i++)
+					cartesianDeflectionErrorOffsetLeft[i] += cartesianDeflectionLeft[i]/20;
+				calibrationCounter++;
+				if(calibrationCounter > 20)
+				{
+					state = 2;
+					for(i = 0; i < 3; i++)
+						xyzTCPPositionRefLeft[i] = xyzTCPPositionLeft[i];
+					cout << "Done" << endl;
+				}
+					
+				break;
+				
+				
+			case 2:		///////////////////////////// CONTROLLING /////////////////////////////
+		
+				// Remove the deflection offset obtained from calibration
+				for(i = 0; i < 3; i++)
+					cartesianDeflectionLeft[i] -= cartesianDeflectionErrorOffsetLeft[i];
+				
+				// Compute the deflection error
+				iterationIndex++;
+				if(iterationIndex*VISION_DEFLECTION_CONTROL_PERIOD >= 5)
+				{
+					iterationIndex = 0;
+					if(deflectionReference[0] == -0.04)
+						deflectionReference[0] = -0.02;
+					else
+						deflectionReference[0] = -0.04;
+				}
+				for(i = 0; i < 3; i++)
+					deflectionError[i] = deflectionReference[i] - cartesianDeflectionLeft[i];
+				
+				// printf("TCP Position (K): {%.1lf, %.1lf, %.1lf} [cm]\n", 100*xyzTCPPositionLeft[0], 100*xyzTCPPositionLeft[1], 100*xyzTCPPositionLeft[2]);
+				// printf("Marker Position (K): {%.1lf, %.1lf, %.1lf} [cm]\n", 100*xyzMarkerPositionLeft[0], 100*xyzMarkerPositionLeft[1], 100*xyzMarkerPositionLeft[2]);
+				// printf("Marker Position (V): {%.1lf, %.1lf, %.1lf} [cm]\n", 100*threadArgs->visionDeflection.leftMarkerPosition[0], 100*threadArgs->visionDeflection.leftMarkerPosition[1], 100*threadArgs->visionDeflection.leftMarkerPosition[2]);
+				printf("Cartesian deflection left: {%.1lf, %.1lf, %.1lf} [cm]\n", 100*cartesianDeflectionLeft[0], 100*cartesianDeflectionLeft[1], 100*cartesianDeflectionLeft[2]);
+				printf("Deflection error left: {%.1lf, %.1lf, %.1lf} [cm]\n", 100*deflectionError[0], 100*deflectionError[1], 100*deflectionError[2]);
+				
+				/*		
+				// Compute the incremental Cartesian position on each axis
+				normDeflection = sqrt(cartesianDeflectionLeft[0]*cartesianDeflectionLeft[0] + cartesianDeflectionLeft[1]*cartesianDeflectionLeft[1] + cartesianDeflectionLeft[2]*cartesianDeflectionLeft[2]);
+				velocity = 0.1;
+				for(i = 0; i < 3; i++)
+				{
+					value = xyzTCPPositionLeft[i] + cartesianDeflectionLeft[i];
+					if(value >= minLimit[i] && value <= maxLimit[i])
+						xyzTCPPositionRefLeft[i] = xyzTCPPositionLeft[i] + cartesianDeflectionLeft[i];
+				}
+				*/
+				
+				for(i = 0; i < 3; i++)
+					xyzTCPPositionRefLeft[i] -= 0.5*deflectionError[i];
+				printf("TCP Reference (C): {%.1lf, %.1lf, %.1lf} [cm]\n", 100*xyzTCPPositionRefLeft[0], 100*xyzTCPPositionRefLeft[1], 100*xyzTCPPositionRefLeft[2]);
+				
+				error = threadArgs->leftArmKinematics->IKSolver_Q1Approx(&qLref[0], &qLref[1], &qLref[2], &qLref[3], xyzTCPPositionRefLeft[0], xyzTCPPositionRefLeft[1], xyzTCPPositionRefLeft[2], 0*PI/180, qL[0]);
+				cout << "________________" << endl;
+				
+				for(i = 0; i < NUM_ARM_JOINTS && error == 0; i++)
+				{
+					// Apply the motion command
+					playTime = 2*VISION_DEFLECTION_CONTROL_PERIOD;
+					leftArmController->moveJoint(leftArmServosID[i], 57.297*qLref[i], playTime, threadArgs->usbDeviceLeftArm);
+					usleep(1000);
+				}
+				
+				break;
+				
+			default:
+			
+				calibrationCounter = 0;
+				state = 1;
+				
+				break;
+		}
+		
+		/*		
+		for(i = 0; i < NUM_ARM_JOINTS; i++)
+		{
+			// Apply the motion command
+			playTime = 2*VISION_DEFLECTION_CONTROL_PERIOD;
+			leftArmController->moveJoint(leftArmServosID[i], qLref[i], playTime, threadArgs->usbDeviceLeftArm);
+			usleep(1000);
+			rightArmController->moveJoint(rightArmServosID[i], qRref[i], playTime, threadArgs->usbDeviceRightArm);
+			usleep(1000);
+			
+		}
+		*/
+		
+		/////////////////////////// DEFLECTION CONTROLLER END ///////////////////////////
+		
+		// Get global time stamp
+		gettimeofday(&t1, NULL);
+		t = (t1.tv_sec - t0.tv_sec) + 1e-6*(t1.tv_usec - t0.tv_usec);
+		
+		// Write data on file
+		dataFile << t << "\t";
+		for(i = 0; i < 3; i++)
+			dataFile << threadArgs->visionDeflection.leftMarkerPosition[i] << "\t";
+		for(i = 0; i < 3; i++)
+			dataFile << cartesianDeflectionLeft[i] << "\t";
+		for(i = 0; i < 3; i++)
+			dataFile << deflectionReference[i] << "\t";
+		for(i = 0; i < 4; i++)
+			dataFile << qL[i] << "\t";
+		dataFile << endl;
+		
+		// Get time stamp at the end of the control loop
+		gettimeofday(&tend, NULL);
+		titeration = (tend.tv_sec - tini.tv_sec) + 1e-6*(tend.tv_usec - tini.tv_usec);
+		
+		// Wait time
+		if(titeration > JOINT_DEFLECTION_CONTROL_PERIOD)
+			cout << "WARNING: [in visionDeflectionControl]: control period exceeded." << endl;
+		else
+			usleep((useconds_t)(1e6*(VISION_DEFLECTION_CONTROL_PERIOD - titeration)));
+	}
+	
+	
+	// Close data file
+	if(dataFile.is_open() == true)
+		dataFile.close();
+}

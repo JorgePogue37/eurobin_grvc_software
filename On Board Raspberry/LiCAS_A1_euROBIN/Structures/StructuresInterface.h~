@@ -1,0 +1,84 @@
+/*
+ * Copyright (c) 2017 Alejandro Suarez Fernandez-Miranda
+ *
+ * This source code is part of the PhD thesis "Dexterous Aerial Manipulation"
+ * and part of the AEROARMS project.
+ *
+ * University of Seville - Robotics, Vision and Control Group
+ *
+ * The distribution of this source code is not allowed without the consent of the author
+ *
+ * File name: StructuresInterface.h
+ */
+ 
+ 
+#ifndef STRUCTURES_INTERFACE_H_
+#define STRUCTURES_INTERFACE_H_
+
+
+
+
+/****************************** VISION INTERFACE ******************************/
+
+// Data packet received from the vision sensor through an UDP socket
+typedef struct
+{
+	uint8_t header[2];					// "VS" character sequence
+	uint8_t packetID;
+	float timeStamp;
+	float leftArmGoalPosition[3];
+	float rightArmGoalPosition[3];
+	float leftArmGoalOrientation[3][3];
+	float rightArmGoalOrientation[3][3];
+	uint8_t checksum;
+} VISION_SENSOR_DATA_PACKET;
+
+
+typedef struct
+{
+	uint8_t header[2];			// "VD" character sequence
+	uint8_t packetID;
+	float timeStamp;
+	float leftMarkerPosition[3];
+	float leftMarkerVelocity[3];
+	float rightMarkerPosition[3];
+	float rightMarkerVelocity[3];
+	uint8_t checksum;
+} VISION_DEFLECTION_DATA_PACKET;
+
+
+/****************************** CONTROL INTERFACE ******************************/
+
+typedef struct
+{
+	uint8_t mode;
+	double leftArmJointPositionRef[NUM_ARM_JOINTS];
+	double leftArmCartesianPositionRef[3];
+	double leftArmJointTorqueRef[NUM_ARM_JOINTS];
+	double leftArmForce[3];
+	double rightArmJointPositionRef[NUM_ARM_JOINTS];
+	double rightArmCartesianPositionRef[3];
+	double rightArmJointTorqueRef[NUM_ARM_JOINTS];
+	double rightArmForce[3];
+	double timeStamp;
+} ARMS_CONTROL_REFERENCES_DATA_PACKET;
+
+
+typedef struct
+{
+	double leftArmJointValues[NUM_ARM_JOINTS];		// Joint values in [rad]
+	double rightArmJointValues[NUM_ARM_JOINTS];		// Joint values in [rad]
+	double leftTCPCartesianPosition[3];				// Tool Center Point Cartesian position in [m]
+	double rightTCPCartesianPosition[3];			// Tool Center Point Cartesian position in [m]
+} ARMS_STATE_PUBLISHER_DATA_PACKET;
+
+
+typedef struct
+{
+	float reference[3];
+} IMPEDANCE_CONTROLLER_REFERENCE;
+
+
+#endif
+
+

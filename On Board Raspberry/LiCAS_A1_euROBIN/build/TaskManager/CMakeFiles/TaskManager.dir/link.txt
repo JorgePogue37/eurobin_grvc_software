@@ -1,0 +1,2 @@
+/usr/bin/ar qc libTaskManager.a CMakeFiles/TaskManager.dir/TaskManager.cpp.o CMakeFiles/TaskManager.dir/TaskManager2.cpp.o
+/usr/bin/ranlib libTaskManager.a

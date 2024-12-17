@@ -1,0 +1,144 @@
+/*
+ * Copyright (c) 2020 LiCAS Robotic Arms
+ *
+ * Developer: Alejandro Suarez Fernandez-Miranda
+ *
+ * This source code is part of LiCAS Robotic Arms.
+ *
+ * The distribution of this source code is not allowed without the consent of the author
+ *
+ * File name: TaskManager.h
+ */
+
+#ifndef TASKMANAGER_H_
+#define TASKMANAGER_H_
+
+
+// Standard library
+#include <iostream>
+#include <fstream>
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <sys/time.h>
+
+
+// Specific library
+#include "../Structures/Structures.h"
+
+
+
+// Constant definition
+
+
+// Namespaces
+using namespace std;
+
+
+class TaskManager
+{
+public:
+
+	/***************** PUBLIC VARIABLES *****************/
+	
+	
+	/***************** PUBLIC METHODS *****************/
+	
+	/*
+	 * Constructor
+	 * */
+	TaskManager(THREAD_ARGS * _threadArgs);
+
+
+	/*
+	 * Destructor
+	 * */
+	virtual ~TaskManager();
+	
+
+	/*
+	 *  Ask user to specify the desired rotation angle for the servo of both left and right arms
+	 */
+	void dualArmServosCalibration();
+	
+	
+	/*
+	 *  Moves the different joints of the arms: shoulder pitch, shoulder roll, shoulder yaw and elbow pitch
+	 */
+	void dualArmJointsIdentification();
+
+
+	/*
+	 * Move the dual arm system to the rest position
+	 */
+	void goToRestPosition();
+
+
+	/*
+	 * Move the dual arm system to the operation position
+	 */
+	void goToOperationPosition();
+	
+	
+	/*
+	 * Open/close the left/right gripper. Specify 1 for gripper open, 0 for gripper close, and 0 for no operation.
+	 */
+	int operateGrippers(uint8_t leftGripperCmd, uint8_t rightGripperCmd);
+
+	/*
+	 * Teleoperation with 3DConnexon mouse
+	 */
+	void teleoperation3DConnexion();
+	void teleoperationGraspWithArms();
+	void teleoperation3DConnexion_Demo();
+	void teleoperationWithDualArm();
+	
+	/*
+	 * Update task status
+	 */
+	void updateTaskExecution();
+	
+
+	/*
+	 * Enable/Disables servos torque
+	 */
+	void enableServosTorqueControl(int servosTorqueEnable);
+	
+	
+	/*
+	 * Take control references from external source
+	 */
+	void externalJointReferenceControl();
+	
+	
+	/*
+	 * 
+	 */
+
+private:
+	/***************** PRIVATE VARIABLES *****************/
+	
+	THREAD_ARGS * threadArgs;
+	COMMAND_PACKET cmdPacket;		// Packet sent to the STM32 board for controlling the grippers
+	
+	bool leftGripperClosed;
+	bool rightGripperClosed;
+	
+	/***************** PRIVATE METHODS *****************/
+	
+	/*
+	 * Return -1, 0, 1 depending on the value
+	 */
+	int signDouble(double value);	
+
+};
+
+#endif /* TASKMANAGER_H_ */
+
+
